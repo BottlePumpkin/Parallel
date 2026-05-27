@@ -3,9 +3,9 @@ import Foundation
 final class WorktreeService {
 
     struct Entry: Equatable {
-        var path: URL
-        var branch: String
-        var head: String       // commit sha
+        let path: URL
+        let branch: String
+        let head: String       // commit sha
     }
 
     enum ServiceError: LocalizedError {
@@ -25,11 +25,19 @@ final class WorktreeService {
         return Self.parseList(r.stdout)
     }
 
-    /// `git worktree list --porcelain` 블록 파서.
-    /// 각 블록은 빈 줄로 구분. `worktree <path>`, `HEAD <sha>`, `branch refs/heads/<name>` 또는 `detached`.
+    /// Parser for `git worktree list --porcelain`.
+    /// Each block separated by a blank line. Recognized lines:
+    /// - `worktree <path>`
+    /// - `HEAD <sha>`
+    /// - `branch refs/heads/<name>` → branch = name
+    /// - `detached`                  → branch = "(detached)"
+    /// - `bare`                      → branch = "(bare)"
+    /// - other lines (`locked`, `prunable`, ...) are ignored.
     static func parseList(_ raw: String) -> [Entry] {
+        let blocks = raw
+            .components(separatedBy: "\n\n")
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         var entries: [Entry] = []
-        let blocks = raw.components(separatedBy: "\n\n")
         for block in blocks {
             var path: URL?
             var branch: String?
@@ -44,7 +52,10 @@ final class WorktreeService {
                     branch = String(s.dropFirst("branch refs/heads/".count))
                 } else if s == "detached" {
                     branch = "(detached)"
+                } else if s == "bare" {
+                    branch = "(bare)"
                 }
+                // unknown lines (locked, prunable, ...) ignored on purpose
             }
             if let path, let head {
                 entries.append(Entry(path: path, branch: branch ?? "(unknown)", head: head))
