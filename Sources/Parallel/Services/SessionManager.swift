@@ -151,6 +151,9 @@ final class SessionTerminalDelegate: NSObject, TerminalViewDelegate {
     func scrolled(source: TerminalView, position: Double) {}
     func setTerminalTitle(source: TerminalView, title: String) {}
     func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
+        // SwiftTerm reports cols=-1, rows=0 during the initial layout pass when
+        // the NSView's frame is still 0×0. Guard before forwarding to PTY.
+        guard newCols > 0, newRows > 0 else { return }
         pty.resize(cols: Int32(newCols), rows: Int32(newRows))
     }
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}

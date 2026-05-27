@@ -73,7 +73,10 @@ final class PTY {
     }
 
     /// Resize the child's terminal.
+    /// Ignores zero/negative dimensions — SwiftTerm emits these during the
+    /// initial layout pass before its NSView has a real frame.
     func resize(cols: Int32, rows: Int32) {
+        guard cols > 0, rows > 0 else { return }
         var size = winsize(ws_row: UInt16(rows), ws_col: UInt16(cols), ws_xpixel: 0, ws_ypixel: 0)
         _ = withUnsafeMutablePointer(to: &size) { ioctl(masterFD, TIOCSWINSZ, $0) }
     }
