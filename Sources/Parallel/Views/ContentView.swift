@@ -10,7 +10,8 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(selection: $selectedWorktreeId)
+            SidebarView(selection: $selectedWorktreeId,
+                        onDelete: { id in pendingDeleteId = id })
                 .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
         } detail: {
             TerminalPaneView(worktreeId: selectedWorktreeId)

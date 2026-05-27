@@ -1,9 +1,15 @@
 import SwiftUI
+import AppKit
 
 @main
 struct ParallelApp: App {
     init() {
         AppLogger.bootstrapFileLogging()
+        // SwiftPM bare-executable launches don't set the activation policy,
+        // which leaves the menu bar disabled and keyboard shortcuts unreachable.
+        // Force regular foreground app so .commands { ParallelCommands() } works.
+        NSApplication.shared.setActivationPolicy(.regular)
+        NSApplication.shared.activate(ignoringOtherApps: true)
     }
 
     @State private var store: WorkspaceStore = {

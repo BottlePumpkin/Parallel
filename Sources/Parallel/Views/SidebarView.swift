@@ -3,6 +3,7 @@ import SwiftUI
 struct SidebarView: View {
     @Environment(WorkspaceStore.self) private var store
     @Binding var selection: UUID?
+    let onDelete: (UUID) -> Void
 
     var body: some View {
         List(selection: $selection) {
@@ -17,6 +18,11 @@ struct SidebarView: View {
                         ForEach(items) { wt in
                             WorktreeRow(worktree: wt)
                                 .tag(wt.id as UUID?)
+                                .contextMenu {
+                                    Button("Delete Worktree…", role: .destructive) {
+                                        onDelete(wt.id)
+                                    }
+                                }
                         }
                     }
                 }

@@ -21,8 +21,8 @@ struct ParallelCommands: Commands {
             Divider()
             Button("Close Session") { actions?.closeCurrentSession() }
                 .keyboardShortcut("w", modifiers: .command)
-            Button("Delete Worktree") { actions?.deleteCurrentWorktree() }
-                .keyboardShortcut(.delete, modifiers: [.command, .shift])
+            Button("Delete Worktree…") { actions?.deleteCurrentWorktree() }
+                .keyboardShortcut(.delete, modifiers: .command)
         }
     }
 }
