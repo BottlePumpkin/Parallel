@@ -3,6 +3,8 @@ import Foundation
 struct Worktree: Identifiable, Codable, Equatable, Hashable {
     let id: UUID
     var repoId: UUID
+    /// Absolute file URL to this worktree's working directory.
+    /// NOTE: Persisted as absolute. Same machine-portability caveat as Repo.root.
     var path: URL
     var branch: String
     var displayName: String

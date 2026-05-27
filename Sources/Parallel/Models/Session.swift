@@ -9,7 +9,7 @@ enum SessionState: Equatable {
 final class Session: Identifiable, Equatable {
     let id: UUID
     let worktreeId: UUID
-    var pid: pid_t
+    let pid: pid_t
     var state: SessionState
 
     init(id: UUID = UUID(), worktreeId: UUID, pid: pid_t, state: SessionState = .running) {
