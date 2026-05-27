@@ -1,21 +1,30 @@
 import Foundation
 import Darwin
 
-/// posix forkpty wrapper.
-/// Forks a child process for a shell, and exposes the master fd for I/O.
+/// posix forkpty wrapper. Forks a child process attached to a pseudo-terminal
+/// and exposes the master fd for I/O.
+///
+/// Ownership contract:
+/// - Caller owns the PTY instance. On deinit, the master fd is closed and any
+///   active read source is cancelled.
+/// - `terminate()` is safe to call multiple times.
 final class PTY {
 
     let pid: pid_t
     let masterFD: Int32
+    private var readSource: DispatchSourceRead?
+    private var terminated = false
 
-    /// Fork a shell process attached to a pseudo-terminal.
     /// - Parameters:
-    ///   - shell: absolute path to executable. Typically `$SHELL` or `/bin/zsh`.
-    ///   - args: arguments after the executable (default: empty — interactive shell).
+    ///   - shell: absolute path to the shell binary (e.g. `/bin/zsh`).
+    ///   - args: extra args after the shell.
     ///   - cwd: working directory for the child.
-    ///   - env: environment variables for the child (defaults to inheriting the parent).
+    ///   - env: child environment.
     ///   - cols/rows: initial terminal size.
-    /// - Returns: nil if `forkpty` fails.
+    ///
+    /// argv[0] is set to `-<basename>` (e.g. `-zsh`) so the shell starts in
+    /// LOGIN mode and sources the user's profile + rc files. Without this,
+    /// PATH/aliases/tool-version managers are missing.
     init?(shell: String,
           args: [String] = [],
           cwd: URL,
@@ -33,20 +42,29 @@ final class PTY {
 
         if pid == 0 {
             // child process
-            chdir(cwd.path)
+            if chdir(cwd.path) != 0 {
+                _exit(127)
+            }
             var mergedEnv = env
             if mergedEnv["TERM"] == nil { mergedEnv["TERM"] = "xterm-256color" }
             let cEnv: [UnsafeMutablePointer<CChar>?] =
                 mergedEnv.map { strdup("\($0.key)=\($0.value)") } + [nil]
+            // Login-shell semantics: argv[0] = "-<basename>"
+            let shellBase = (shell as NSString).lastPathComponent
+            let loginName = "-" + shellBase
             let cArgs: [UnsafeMutablePointer<CChar>?] =
-                ([shell] + args).map { strdup($0) } + [nil]
+                ([loginName] + args).map { strdup($0) } + [nil]
             execve(shell, cArgs, cEnv)
-            // exec failed
             _exit(127)
         }
 
         self.pid = pid
         self.masterFD = master
+    }
+
+    deinit {
+        readSource?.cancel()
+        close(masterFD)
     }
 
     /// Write bytes to the child's stdin.
@@ -60,36 +78,64 @@ final class PTY {
         _ = withUnsafeMutablePointer(to: &size) { ioctl(masterFD, TIOCSWINSZ, $0) }
     }
 
-    /// Start async reads from the master fd. Calls `onData` for each chunk and
-    /// `onEOF` once when the child closes. Returns a DispatchSourceRead that the
-    /// caller must retain (it's cancelled on EOF too).
+    /// Start async reads from the master fd.
+    /// - `onData` is called for each chunk of bytes from the child.
+    /// - `onEOF` is called once when the child closes the pty (clean exit OR
+    ///   read error including `EIO` after process death on Darwin/BSD).
+    /// The returned source is also retained internally and will be cancelled
+    /// in deinit. The caller may still cancel it manually if they want to
+    /// stop reading without releasing the PTY.
+    @discardableResult
     func startReading(onData: @escaping (Data) -> Void,
                       onEOF: @escaping () -> Void) -> DispatchSourceRead {
         let source = DispatchSource.makeReadSource(
             fileDescriptor: masterFD,
             queue: .global(qos: .userInitiated)
         )
-        source.setEventHandler {
+        source.setEventHandler { [masterFD] in
             let avail = Int(source.data)
             guard avail > 0 else { return }
             var buf = [UInt8](repeating: 0, count: avail)
-            let n = read(self.masterFD, &buf, avail)
+            let n = read(masterFD, &buf, avail)
             if n > 0 {
                 onData(Data(buf.prefix(n)))
             } else if n == 0 {
+                // clean EOF
                 onEOF()
                 source.cancel()
+            } else {
+                // n < 0: read error. On Darwin, EIO after child exits is normal.
+                // EAGAIN/EINTR are transient; everything else means we're done.
+                let err = errno
+                if err != EAGAIN && err != EINTR {
+                    onEOF()
+                    source.cancel()
+                }
             }
         }
         source.resume()
+        readSource = source
         return source
     }
 
-    /// Send SIGTERM, then SIGKILL after 2 seconds if the child is still alive.
+    /// Send SIGTERM. If the child is still alive after 2 seconds, send SIGKILL —
+    /// but only after confirming via `waitpid(WNOHANG)` that the original child
+    /// has not exited (which would have allowed the OS to recycle the pid).
+    /// Safe to call multiple times.
     func terminate() {
+        if terminated { return }
+        terminated = true
         kill(pid, SIGTERM)
         DispatchQueue.global().asyncAfter(deadline: .now() + 2) { [pid] in
-            kill(pid, SIGKILL)
+            var status: Int32 = 0
+            let r = waitpid(pid, &status, WNOHANG)
+            // r == 0  → child still alive AND still ours → safe to kill
+            // r >  0  → child exited and we just reaped it → don't kill (pid may be recycled)
+            // r == -1 → already reaped elsewhere or not our child → don't kill
+            if r == 0 {
+                kill(pid, SIGKILL)
+                _ = waitpid(pid, &status, 0) // reap to avoid zombie
+            }
         }
     }
 }
