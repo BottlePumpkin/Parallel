@@ -88,6 +88,7 @@ private struct WorktreeRow: View {
                     .font(.caption)
                     .padding(.horizontal, 6)
                     .background(Capsule().fill(.tertiary))
+                    .help("\(s.changedFiles) changed file\(s.changedFiles == 1 ? "" : "s") (git status)")
             }
         }
     }
