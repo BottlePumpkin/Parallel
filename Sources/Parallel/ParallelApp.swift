@@ -8,6 +8,7 @@ struct ParallelApp: App {
         return s
     }()
     @State private var sessionManager = SessionManager()
+    @State private var statusWatcher: StatusWatcher?
 
     var body: some Scene {
         WindowGroup("Parallel") {
@@ -15,6 +16,13 @@ struct ParallelApp: App {
                 .frame(minWidth: 900, minHeight: 600)
                 .environment(store)
                 .environment(sessionManager)
+                .onAppear {
+                    if statusWatcher == nil {
+                        let w = StatusWatcher(store: store)
+                        statusWatcher = w
+                        w.start()
+                    }
+                }
         }
         .windowResizability(.contentSize)
     }

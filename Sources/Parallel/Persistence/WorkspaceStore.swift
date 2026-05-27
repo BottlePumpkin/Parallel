@@ -6,6 +6,8 @@ final class WorkspaceStore {
     var repos: [Repo] = []
     var worktrees: [Worktree] = []
     var lastSelectedWorktreeId: UUID?
+    /// Ephemeral worktree status (not persisted). StatusWatcher populates this.
+    var statuses: [UUID: WorktreeStatus] = [:]
 
     private let directory: URL
     private let fileName = "workspace.json"
