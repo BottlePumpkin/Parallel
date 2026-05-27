@@ -31,14 +31,47 @@ struct SidebarView: View {
 }
 
 private struct WorktreeRow: View {
+    @Environment(WorkspaceStore.self) private var store
+    @Environment(SessionManager.self) private var sessionManager
     let worktree: Worktree
 
     var body: some View {
+        let status = store.statuses[worktree.id]
+        let session = sessionManager.session(for: worktree.id)
+
         HStack(spacing: 6) {
-            Circle().frame(width: 6, height: 6).foregroundStyle(.tertiary)
+            stateDot(status: status, session: session)
             Text(worktree.displayName)
                 .lineLimit(1)
             Spacer()
+            if let s = status, s.lastError != nil {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .help(s.lastError ?? "")
+            } else if let s = status, s.changedFiles > 0 {
+                Text("\(s.changedFiles)")
+                    .font(.caption)
+                    .padding(.horizontal, 6)
+                    .background(Capsule().fill(.tertiary))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func stateDot(status: WorktreeStatus?, session: SessionManager.SessionEntry?) -> some View {
+        let sessionDead: Bool = {
+            guard let s = session else { return true }
+            if case .exited = s.session.state { return true }
+            return false
+        }()
+        if sessionDead {
+            Image(systemName: "moon.zzz.fill")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        } else if status?.isDirty == true {
+            Circle().fill(.orange).frame(width: 8, height: 8)
+        } else {
+            Circle().fill(.green).frame(width: 8, height: 8)
         }
     }
 }
