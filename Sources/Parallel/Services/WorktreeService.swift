@@ -137,3 +137,21 @@ extension WorktreeService {
         return out
     }
 }
+
+extension WorktreeService {
+    /// Local branch names in the repo, sorted by most-recent commit date.
+    /// Used to suggest a base when creating a worktree.
+    func branches(in repoRoot: URL) throws -> [String] {
+        let r = try GitCLI.run(
+            ["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/heads/"],
+            in: repoRoot
+        )
+        guard r.exitCode == 0 else {
+            throw ServiceError.gitFailed(stderr: r.stderr, exitCode: r.exitCode)
+        }
+        return r.stdout
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .map { String($0).trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+}

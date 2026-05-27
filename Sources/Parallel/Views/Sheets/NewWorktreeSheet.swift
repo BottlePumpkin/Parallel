@@ -14,6 +14,7 @@ struct NewWorktreeSheet: View {
     @State private var setupCommands = ""
     @State private var displayName = ""
     @State private var errorMessage: String?
+    @State private var availableBranches: [String] = []
 
     private let svc = WorktreeService()
 
@@ -32,14 +33,36 @@ struct NewWorktreeSheet: View {
                     Text(r.displayName).tag(UUID?.some(r.id))
                 }
             }
-            .onChange(of: selectedRepoId) { _, _ in prefillSetup() }
+            .onChange(of: selectedRepoId) { _, _ in
+                prefillSetup()
+                loadBranches()
+            }
 
             HStack {
                 TextField("Branch", text: $branch)
                     .onChange(of: branch) { _, _ in displayName = sanitizedName }
                 Toggle("New branch", isOn: $createBranch)
             }
-            TextField("Base", text: $base).disabled(!createBranch)
+
+            HStack {
+                TextField("Base", text: $base).disabled(!createBranch)
+                Menu {
+                    if availableBranches.isEmpty {
+                        Text("(no branches)").foregroundStyle(.secondary)
+                    } else {
+                        ForEach(availableBranches, id: \.self) { b in
+                            Button(b) { base = b }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "chevron.down.circle")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .disabled(!createBranch || availableBranches.isEmpty)
+                .help("Pick from existing branches")
+            }
             TextField("Display name", text: $displayName)
 
             if let preview = pathPreview {
@@ -66,6 +89,19 @@ struct NewWorktreeSheet: View {
         .frame(width: 460)
         .onAppear {
             if initialRepoId != nil { prefillSetup() }
+            loadBranches()
+        }
+    }
+
+    private func loadBranches() {
+        guard let repo = selectedRepo else {
+            availableBranches = []
+            return
+        }
+        availableBranches = (try? svc.branches(in: repo.root)) ?? []
+        // If current base isn't in the list and the repo has branches, switch to the first.
+        if !availableBranches.isEmpty, !availableBranches.contains(base) {
+            base = availableBranches.first ?? base
         }
     }
 
