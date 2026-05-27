@@ -17,9 +17,13 @@ enum GitCLI {
     }
 
     /// Run `git <args>` synchronously in `cwd`. Returns exitCode/stdout/stderr.
-    /// Exit code ≠ 0 is returned normally (caller decides what to do).
-    /// Throws GitError only if the process couldn't be launched.
-    static func run(_ args: [String], in cwd: URL, timeout: TimeInterval = 30) throws -> Result {
+    /// - Exit code ≠ 0 is returned normally; callers decide what to do.
+    /// - Throws `GitError.launchFailed` only when the process can't start.
+    /// - stdout/stderr are decoded as UTF-8; non-UTF-8 bytes fall back to
+    ///   ISO Latin-1 so callers always get back the byte content as a string.
+    /// - Pipes are drained on background queues to avoid the classic POSIX
+    ///   deadlock when output exceeds the kernel pipe buffer (~64KB on macOS).
+    static func run(_ args: [String], in cwd: URL) throws -> Result {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         proc.arguments = ["git"] + args
@@ -36,15 +40,31 @@ enum GitCLI {
             throw GitError.launchFailed("\(error)")
         }
 
+        var outData = Data()
+        var errData = Data()
+        let group = DispatchGroup()
+
+        group.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+            group.leave()
+        }
+        group.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+            group.leave()
+        }
+
         proc.waitUntilExit()
+        group.wait()
 
-        let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
-        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+        let stdout = String(data: outData, encoding: .utf8)
+            ?? String(data: outData, encoding: .isoLatin1)
+            ?? ""
+        let stderr = String(data: errData, encoding: .utf8)
+            ?? String(data: errData, encoding: .isoLatin1)
+            ?? ""
 
-        return Result(
-            exitCode: proc.terminationStatus,
-            stdout: String(data: outData, encoding: .utf8) ?? "",
-            stderr: String(data: errData, encoding: .utf8) ?? ""
-        )
+        return Result(exitCode: proc.terminationStatus, stdout: stdout, stderr: stderr)
     }
 }
