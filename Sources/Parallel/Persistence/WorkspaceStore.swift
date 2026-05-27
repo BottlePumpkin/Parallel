@@ -87,7 +87,7 @@ private extension JSONEncoder {
         let e = JSONEncoder()
         e.dateEncodingStrategy = .custom { date, encoder in
             var container = encoder.singleValueContainer()
-            try container.encode(date.timeIntervalSinceReferenceDate)
+            try container.encode(WorkspaceStoreDateFormatter.string(from: date))
         }
         e.outputFormatting = [.prettyPrinted, .sortedKeys]
         return e
@@ -99,9 +99,25 @@ private extension JSONDecoder {
         let d = JSONDecoder()
         d.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
-            let interval = try container.decode(Double.self)
-            return Date(timeIntervalSinceReferenceDate: interval)
+            let raw = try container.decode(String.self)
+            guard let date = WorkspaceStoreDateFormatter.date(from: raw) else {
+                throw DecodingError.dataCorruptedError(
+                    in: container,
+                    debugDescription: "Invalid ISO8601 (with fractional seconds): \(raw)"
+                )
+            }
+            return date
         }
         return d
     }
+}
+
+private enum WorkspaceStoreDateFormatter {
+    private static let formatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    static func string(from date: Date) -> String { formatter.string(from: date) }
+    static func date(from string: String) -> Date? { formatter.date(from: string) }
 }

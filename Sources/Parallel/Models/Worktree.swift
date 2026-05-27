@@ -27,8 +27,8 @@ struct Worktree: Identifiable, Codable, Equatable, Hashable {
         self.path = path
         self.branch = branch
         self.displayName = displayName
-        self.createdAt = createdAt
-        self.lastUsedAt = lastUsedAt
+        self.createdAt = createdAt.truncatedToMilliseconds
+        self.lastUsedAt = lastUsedAt.truncatedToMilliseconds
         self.setupCommands = setupCommands
     }
 }
