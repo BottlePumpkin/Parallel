@@ -5,6 +5,7 @@ struct SidebarView: View {
     @Binding var selection: UUID?
     let onDelete: (UUID) -> Void
     let onAddWorktree: (UUID) -> Void
+    let onImportWorktrees: (UUID) -> Void
 
     var body: some View {
         List(selection: $selection) {
@@ -30,13 +31,16 @@ struct SidebarView: View {
                     HStack {
                         Text(repo.displayName)
                         Spacer()
-                        Button {
-                            onAddWorktree(repo.id)
+                        Menu {
+                            Button("New Worktree…") { onAddWorktree(repo.id) }
+                            Button("Import Existing…") { onImportWorktrees(repo.id) }
                         } label: {
                             Image(systemName: "plus")
                         }
-                        .buttonStyle(.plain)
-                        .help("New worktree in \(repo.displayName)")
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+                        .help("Add worktree to \(repo.displayName)")
                     }
                 }
             }

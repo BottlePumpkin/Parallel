@@ -1,5 +1,7 @@
 import SwiftUI
 
+private struct SheetRepoId: Identifiable { let id: UUID }
+
 struct ContentView: View {
     @Environment(WorkspaceStore.self) private var store
     @Environment(SessionManager.self) private var sessionManager
@@ -7,6 +9,7 @@ struct ContentView: View {
     @State private var showAddRepo = false
     @State private var showNewWorktree = false
     @State private var newWorktreeInitialRepoId: UUID?
+    @State private var importWorktreesRepoId: UUID?
     @State private var pendingDeleteId: UUID?
 
     var body: some View {
@@ -17,6 +20,9 @@ struct ContentView: View {
                 onAddWorktree: { repoId in
                     newWorktreeInitialRepoId = repoId
                     showNewWorktree = true
+                },
+                onImportWorktrees: { repoId in
+                    importWorktreesRepoId = repoId
                 }
             )
             .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
@@ -41,6 +47,12 @@ struct ContentView: View {
             newWorktreeInitialRepoId = nil
         }) {
             NewWorktreeSheet(initialRepoId: newWorktreeInitialRepoId)
+        }
+        .sheet(item: Binding(
+            get: { importWorktreesRepoId.map(SheetRepoId.init) },
+            set: { importWorktreesRepoId = $0?.id }
+        )) { wrapper in
+            ImportWorktreesSheet(repoId: wrapper.id)
         }
         .alert("Delete worktree?", isPresented: Binding(
             get: { pendingDeleteId != nil },
