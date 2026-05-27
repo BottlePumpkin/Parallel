@@ -148,9 +148,11 @@ final class SessionManager {
     static let preferredTerminalFont: NSFont = {
         let size: CGFloat = 13
         let candidates = [
-            "MesloLGS NF",
-            "JetBrainsMonoNL Nerd Font Mono",
+            "MesloLGS Nerd Font Mono",   // v3 cask (font-meslo-lg-nerd-font)
+            "MesloLGS Nerd Font",
+            "MesloLGS NF",               // legacy v2 name
             "JetBrainsMono Nerd Font Mono",
+            "JetBrainsMonoNL Nerd Font Mono",
             "Hack Nerd Font Mono",
             "FiraCode Nerd Font Mono",
             "D2CodingLigature Nerd Font",
