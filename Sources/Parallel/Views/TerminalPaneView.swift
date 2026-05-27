@@ -10,21 +10,43 @@ struct TerminalPaneView: View {
     var body: some View {
         Group {
             if let id = worktreeId, let wt = store.worktree(id: id) {
-                TerminalContainer(worktree: wt)
-                    .id(wt.id)
+                let entry = sessionManager.session(for: wt.id)
+                if let entry, case .running = entry.session.state {
+                    TerminalContainer(worktree: wt)
+                        .id(wt.id)
+                } else {
+                    deadSessionPlaceholder(for: wt)
+                }
             } else {
-                placeholder
+                emptyPlaceholder
             }
         }
     }
 
-    private var placeholder: some View {
+    private var emptyPlaceholder: some View {
         VStack(spacing: 8) {
-            Image(systemName: "terminal")
+            Image(systemName: "terminal").font(.system(size: 40)).foregroundStyle(.tertiary)
+            Text("Select a worktree").foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func deadSessionPlaceholder(for wt: Worktree) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: "moon.zzz.fill")
                 .font(.system(size: 40))
                 .foregroundStyle(.tertiary)
-            Text(worktreeId == nil ? "Select a worktree" : "No session")
+            Text("Session ended").font(.headline)
+            Text(wt.path.path)
+                .font(.caption)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .padding(.horizontal, 40)
+            Button("Restart Session") {
+                sessionManager.restartSession(for: wt, setupCommands: wt.setupCommands)
+            }
+            .keyboardShortcut(.defaultAction)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -39,7 +61,5 @@ private struct TerminalContainer: NSViewRepresentable {
         return entry?.terminalView ?? TerminalView(frame: .zero)
     }
 
-    func updateNSView(_ nsView: TerminalView, context: Context) {
-        // .id(wt.id) on parent triggers makeNSView when worktree changes
-    }
+    func updateNSView(_ nsView: TerminalView, context: Context) {}
 }
