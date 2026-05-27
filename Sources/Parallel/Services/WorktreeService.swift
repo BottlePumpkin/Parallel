@@ -64,3 +64,26 @@ final class WorktreeService {
         return entries
     }
 }
+
+extension WorktreeService {
+    /// Create a new worktree.
+    /// - createBranch=true:  `git worktree add -b <branch> <path> <base>`
+    /// - createBranch=false: `git worktree add <path> <branch>` (check out existing branch)
+    func add(repoRoot: URL, branch: String, base: String, path: URL, createBranch: Bool) throws {
+        // Ensure parent directory exists (git won't create intermediate parents)
+        try FileManager.default.createDirectory(
+            at: path.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let args: [String]
+        if createBranch {
+            args = ["worktree", "add", "-b", branch, path.path, base]
+        } else {
+            args = ["worktree", "add", path.path, branch]
+        }
+        let r = try GitCLI.run(args, in: repoRoot)
+        guard r.exitCode == 0 else {
+            throw ServiceError.gitFailed(stderr: r.stderr, exitCode: r.exitCode)
+        }
+    }
+}

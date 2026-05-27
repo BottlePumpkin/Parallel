@@ -75,4 +75,21 @@ final class WorktreeServiceTests: XCTestCase {
         XCTAssertEqual(entries.count, 1)
         XCTAssertEqual(entries[0].branch, "main")
     }
+
+    func test_add_createsNewBranchAndWorktree() throws {
+        let svc = WorktreeService()
+        let dest = repoRoot.appendingPathComponent(".claude/worktrees/feat-x")
+        try svc.add(repoRoot: repoRoot, branch: "feat/x", base: "main", path: dest, createBranch: true)
+
+        let entries = try svc.list(in: repoRoot)
+        XCTAssertEqual(entries.count, 2)
+        XCTAssertTrue(entries.contains { $0.branch == "feat/x" })
+    }
+
+    func test_add_existingPath_throws() throws {
+        let svc = WorktreeService()
+        let dest = repoRoot.appendingPathComponent(".claude/worktrees/feat-y")
+        try svc.add(repoRoot: repoRoot, branch: "feat/y", base: "main", path: dest, createBranch: true)
+        XCTAssertThrowsError(try svc.add(repoRoot: repoRoot, branch: "feat/y", base: "main", path: dest, createBranch: true))
+    }
 }
