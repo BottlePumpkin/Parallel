@@ -90,16 +90,36 @@ struct AddRepoSheet: View {
         let setupLines = defaultSetupCommands
             .split(separator: "\n").map { String($0).trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
-        let repo = Repo(root: root, displayName: displayName,
-                        worktreeBaseDir: worktreeBaseDir,
-                        defaultSetupCommands: setupLines)
-        store.addRepo(repo)
+
+        // If this repo root is already registered, merge into the existing Repo
+        // instead of creating a duplicate group.
+        let targetRepoId: UUID
+        if let existing = store.repos.first(where: {
+            $0.root.standardizedFileURL == root.standardizedFileURL
+        }) {
+            targetRepoId = existing.id
+        } else {
+            let repo = Repo(root: root, displayName: displayName,
+                            worktreeBaseDir: worktreeBaseDir,
+                            defaultSetupCommands: setupLines)
+            store.addRepo(repo)
+            targetRepoId = repo.id
+        }
+
+        // Existing worktree paths under this repo — avoid duplicates.
+        let existingPaths = Set(
+            store.worktrees
+                .filter { $0.repoId == targetRepoId }
+                .map { $0.path.standardizedFileURL }
+        )
 
         for (idx, entry) in discovered.enumerated() where importChoices[idx] {
             // Skip the main worktree (= repo root itself) — that's the repo, not a worktree to track.
             if entry.path.standardizedFileURL == root.standardizedFileURL { continue }
+            // Skip if already imported.
+            if existingPaths.contains(entry.path.standardizedFileURL) { continue }
             let wt = Worktree(
-                repoId: repo.id,
+                repoId: targetRepoId,
                 path: entry.path,
                 branch: entry.branch,
                 displayName: entry.path.lastPathComponent,
