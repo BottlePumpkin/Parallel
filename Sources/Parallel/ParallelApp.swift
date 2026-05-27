@@ -25,5 +25,8 @@ struct ParallelApp: App {
                 }
         }
         .windowResizability(.contentSize)
+        .commands {
+            ParallelCommands()
+        }
     }
 }
