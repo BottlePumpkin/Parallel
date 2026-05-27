@@ -27,6 +27,9 @@ struct TerminalPaneView: View {
         VStack(spacing: 8) {
             Image(systemName: "terminal").font(.system(size: 40)).foregroundStyle(.tertiary)
             Text("Select a worktree").foregroundStyle(.secondary)
+            Text("Note: terminal sessions don't persist across app restarts.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

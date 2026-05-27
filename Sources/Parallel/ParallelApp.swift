@@ -27,6 +27,12 @@ struct ParallelApp: App {
                         w.start()
                     }
                 }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                    for wt in store.worktrees {
+                        sessionManager.terminate(worktreeId: wt.id)
+                    }
+                    AppLogger.app.info("app terminating, sessions cleaned up")
+                }
         }
         .windowResizability(.contentSize)
         .commands {
