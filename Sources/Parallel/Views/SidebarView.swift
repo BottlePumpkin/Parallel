@@ -67,8 +67,17 @@ private struct WorktreeRow: View {
 
         HStack(spacing: 6) {
             stateDot(status: status, session: session)
-            Text(worktree.displayName)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(worktree.displayName)
+                    .lineLimit(1)
+                if worktree.branch != worktree.displayName {
+                    Text(worktree.branch)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
             Spacer()
             if let s = status, s.lastError != nil {
                 Image(systemName: "exclamationmark.triangle.fill")
