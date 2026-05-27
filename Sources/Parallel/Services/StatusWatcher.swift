@@ -73,6 +73,7 @@ final class StatusWatcher {
                         self.store.statuses[wt.id] = s
                     }
                 } catch {
+                    AppLogger.status.error("status failed for \(wt.path.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
                     DispatchQueue.main.async {
                         var s = self.store.statuses[wt.id] ?? WorktreeStatus()
                         s.lastError = error.localizedDescription

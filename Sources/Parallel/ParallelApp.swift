@@ -2,6 +2,10 @@ import SwiftUI
 
 @main
 struct ParallelApp: App {
+    init() {
+        AppLogger.bootstrapFileLogging()
+    }
+
     @State private var store: WorkspaceStore = {
         let s = WorkspaceStore(directory: WorkspaceStore.defaultDirectory)
         try? s.load()

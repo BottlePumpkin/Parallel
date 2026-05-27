@@ -40,6 +40,7 @@ final class WorkspaceStore {
             self.worktrees = payload.worktrees
             self.lastSelectedWorktreeId = payload.lastSelectedWorktreeId
         } catch {
+            AppLogger.store.error("workspace.json corrupt: \(error.localizedDescription, privacy: .public)")
             let stamp = Int(Date().timeIntervalSince1970)
             let quarantine = directory.appendingPathComponent("workspace.json.corrupted-\(stamp)")
             try? FileManager.default.moveItem(at: fileURL, to: quarantine)
