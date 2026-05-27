@@ -5,6 +5,8 @@ struct NewWorktreeSheet: View {
     @Environment(SessionManager.self) private var sessionManager
     @Environment(\.dismiss) private var dismiss
 
+    let initialRepoId: UUID?
+
     @State private var selectedRepoId: UUID?
     @State private var branch = ""
     @State private var base = "main"
@@ -14,6 +16,11 @@ struct NewWorktreeSheet: View {
     @State private var errorMessage: String?
 
     private let svc = WorktreeService()
+
+    init(initialRepoId: UUID? = nil) {
+        self.initialRepoId = initialRepoId
+        self._selectedRepoId = State(initialValue: initialRepoId)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -57,6 +64,9 @@ struct NewWorktreeSheet: View {
         }
         .padding(20)
         .frame(width: 460)
+        .onAppear {
+            if initialRepoId != nil { prefillSetup() }
+        }
     }
 
     private var selectedRepo: Repo? {

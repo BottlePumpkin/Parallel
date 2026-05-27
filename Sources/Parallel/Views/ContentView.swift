@@ -6,13 +6,20 @@ struct ContentView: View {
     @State private var selectedWorktreeId: UUID?
     @State private var showAddRepo = false
     @State private var showNewWorktree = false
+    @State private var newWorktreeInitialRepoId: UUID?
     @State private var pendingDeleteId: UUID?
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(selection: $selectedWorktreeId,
-                        onDelete: { id in pendingDeleteId = id })
-                .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
+            SidebarView(
+                selection: $selectedWorktreeId,
+                onDelete: { id in pendingDeleteId = id },
+                onAddWorktree: { repoId in
+                    newWorktreeInitialRepoId = repoId
+                    showNewWorktree = true
+                }
+            )
+            .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
         } detail: {
             TerminalPaneView(worktreeId: selectedWorktreeId)
         }
@@ -30,7 +37,11 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showAddRepo) { AddRepoSheet() }
-        .sheet(isPresented: $showNewWorktree) { NewWorktreeSheet() }
+        .sheet(isPresented: $showNewWorktree, onDismiss: {
+            newWorktreeInitialRepoId = nil
+        }) {
+            NewWorktreeSheet(initialRepoId: newWorktreeInitialRepoId)
+        }
         .alert("Delete worktree?", isPresented: Binding(
             get: { pendingDeleteId != nil },
             set: { if !$0 { pendingDeleteId = nil } }

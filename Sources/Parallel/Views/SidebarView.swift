@@ -4,11 +4,12 @@ struct SidebarView: View {
     @Environment(WorkspaceStore.self) private var store
     @Binding var selection: UUID?
     let onDelete: (UUID) -> Void
+    let onAddWorktree: (UUID) -> Void
 
     var body: some View {
         List(selection: $selection) {
             ForEach(store.repos) { repo in
-                Section(repo.displayName) {
+                Section {
                     let items = store.worktrees.filter { $0.repoId == repo.id }
                     if items.isEmpty {
                         Text("(no worktrees)")
@@ -24,6 +25,18 @@ struct SidebarView: View {
                                     }
                                 }
                         }
+                    }
+                } header: {
+                    HStack {
+                        Text(repo.displayName)
+                        Spacer()
+                        Button {
+                            onAddWorktree(repo.id)
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .buttonStyle(.plain)
+                        .help("New worktree in \(repo.displayName)")
                     }
                 }
             }
