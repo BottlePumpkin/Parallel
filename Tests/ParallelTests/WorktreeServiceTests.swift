@@ -92,4 +92,18 @@ final class WorktreeServiceTests: XCTestCase {
         try svc.add(repoRoot: repoRoot, branch: "feat/y", base: "main", path: dest, createBranch: true)
         XCTAssertThrowsError(try svc.add(repoRoot: repoRoot, branch: "feat/y", base: "main", path: dest, createBranch: true))
     }
+
+    func test_add_checksOutExistingBranch_createBranchFalse() throws {
+        // Create the branch first (without worktree)
+        _ = try GitCLI.run(["branch", "feat/existing"], in: repoRoot)
+
+        let svc = WorktreeService()
+        let dest = repoRoot.appendingPathComponent(".claude/worktrees/feat-existing")
+        try svc.add(repoRoot: repoRoot, branch: "feat/existing", base: "main",
+                    path: dest, createBranch: false)
+
+        let entries = try svc.list(in: repoRoot)
+        XCTAssertEqual(entries.count, 2)
+        XCTAssertTrue(entries.contains { $0.branch == "feat/existing" })
+    }
 }
