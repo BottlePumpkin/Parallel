@@ -21,4 +21,18 @@ final class PathSanitizerTests: XCTestCase {
     func test_trimsLeadingTrailingDashes() {
         XCTAssertEqual(PathSanitizer.sanitize("/feat/"), "feat")
     }
+
+    func test_emptyInput_returnsEmpty() {
+        XCTAssertEqual(PathSanitizer.sanitize(""), "")
+    }
+
+    func test_onlyDangerousChars_returnsEmpty() {
+        XCTAssertEqual(PathSanitizer.sanitize("///???"), "")
+    }
+
+    func test_isEmpty_helperFlagsInvalidNames() {
+        XCTAssertTrue(PathSanitizer.sanitize("").isEmpty)
+        XCTAssertTrue(PathSanitizer.sanitize("/?/").isEmpty)
+        XCTAssertFalse(PathSanitizer.sanitize("ok").isEmpty)
+    }
 }
