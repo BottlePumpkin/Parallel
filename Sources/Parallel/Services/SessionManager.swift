@@ -55,6 +55,7 @@ final class SessionManager {
         guard let pty = PTY(shell: shell, cwd: worktree.path) else { return nil }
 
         let view = TerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 500))
+        view.font = Self.preferredTerminalFont
         let delegate = SessionTerminalDelegate(pty: pty)
         view.terminalDelegate = delegate
 
@@ -139,6 +140,28 @@ final class SessionManager {
         }
         e.pendingSetupCommands = []
     }
+
+    /// Best installed font for the terminal. Prefers Nerd Fonts so popular
+    /// prompts (powerlevel10k, starship) render correctly. Falls back to the
+    /// user's likely iTerm font (D2Coding) and finally Menlo.
+    /// Picked once at first access and cached.
+    static let preferredTerminalFont: NSFont = {
+        let size: CGFloat = 13
+        let candidates = [
+            "MesloLGS NF",
+            "JetBrainsMonoNL Nerd Font Mono",
+            "JetBrainsMono Nerd Font Mono",
+            "Hack Nerd Font Mono",
+            "FiraCode Nerd Font Mono",
+            "D2CodingLigature Nerd Font",
+            "D2Coding",
+            "Menlo",
+        ]
+        for name in candidates {
+            if let f = NSFont(name: name, size: size) { return f }
+        }
+        return NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+    }()
 }
 
 final class SessionTerminalDelegate: NSObject, TerminalViewDelegate {
