@@ -6,6 +6,7 @@ struct SidebarView: View {
     let onDelete: (UUID) -> Void
     let onAddWorktree: (UUID) -> Void
     let onImportWorktrees: (UUID) -> Void
+    let onRename: (UUID) -> Void
 
     var body: some View {
         List(selection: $selection) {
@@ -21,6 +22,8 @@ struct SidebarView: View {
                             WorktreeRow(worktree: wt)
                                 .tag(wt.id as UUID?)
                                 .contextMenu {
+                                    Button("Rename…") { onRename(wt.id) }
+                                    Divider()
                                     Button("Delete Worktree…", role: .destructive) {
                                         onDelete(wt.id)
                                     }

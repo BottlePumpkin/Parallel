@@ -11,6 +11,8 @@ struct ContentView: View {
     @State private var newWorktreeInitialRepoId: UUID?
     @State private var importWorktreesRepoId: UUID?
     @State private var pendingDeleteId: UUID?
+    @State private var renameTargetId: UUID?
+    @State private var renameText: String = ""
 
     var body: some View {
         NavigationSplitView {
@@ -23,6 +25,10 @@ struct ContentView: View {
                 },
                 onImportWorktrees: { repoId in
                     importWorktreesRepoId = repoId
+                },
+                onRename: { id in
+                    renameText = store.worktree(id: id)?.displayName ?? ""
+                    renameTargetId = id
                 }
             )
             .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
@@ -65,6 +71,19 @@ struct ContentView: View {
                 Text("This will remove the worktree at \(wt.path.lastPathComponent). The branch is preserved.")
             }
         }
+        .alert("Rename worktree", isPresented: Binding(
+            get: { renameTargetId != nil },
+            set: { if !$0 { renameTargetId = nil } }
+        )) {
+            TextField("Display name", text: $renameText)
+            Button("Save") { confirmRename() }
+                .keyboardShortcut(.defaultAction)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if let id = renameTargetId, let wt = store.worktree(id: id) {
+                Text("Branch: \(wt.branch)")
+            }
+        }
         .focusedValue(\.contentActions, ContentActions(
             newWorktree: { showNewWorktree = true },
             addRepo:     { showAddRepo = true },
@@ -91,6 +110,17 @@ struct ContentView: View {
             store.lastSelectedWorktreeId = new
             try? store.save()
         }
+    }
+
+    private func confirmRename() {
+        guard let id = renameTargetId else { return }
+        let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { renameTargetId = nil; return }
+        if let idx = store.worktrees.firstIndex(where: { $0.id == id }) {
+            store.worktrees[idx].displayName = trimmed
+            try? store.save()
+        }
+        renameTargetId = nil
     }
 
     private func confirmDelete() {
