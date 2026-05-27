@@ -103,6 +103,9 @@ extension WorktreeService {
     /// Run `git status --porcelain` and (if upstream is set) `git rev-list` to
     /// populate a `WorktreeStatus`.
     /// - Returns: status with `isDirty`, `changedFiles`, `ahead`, `behind`, `lastCheckedAt`.
+    /// - Note: `changedFiles` counts porcelain lines. Merge conflicts emit lines
+    ///   per stage, so the count may overshoot during a conflict. `isDirty` is
+    ///   still authoritative.
     func status(at path: URL) throws -> WorktreeStatus {
         var out = WorktreeStatus()
         out.lastCheckedAt = Date()

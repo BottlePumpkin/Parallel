@@ -131,4 +131,32 @@ final class WorktreeServiceTests: XCTestCase {
         XCTAssertTrue(s.isDirty)
         XCTAssertEqual(s.changedFiles, 1)
     }
+
+    func test_remove_nonWorktreePath_throws() throws {
+        let svc = WorktreeService()
+        let bogus = repoRoot.appendingPathComponent("nonexistent-worktree")
+        XCTAssertThrowsError(try svc.remove(repoRoot: repoRoot, path: bogus, force: false)) { error in
+            guard let svcErr = error as? WorktreeService.ServiceError,
+                  case .gitFailed = svcErr else {
+                XCTFail("Expected ServiceError.gitFailed, got \(error)")
+                return
+            }
+        }
+    }
+
+    func test_status_countsModifiedAndStagedFiles() throws {
+        // Modify the existing tracked file (a.txt) and stage it
+        try "modified".write(to: repoRoot.appendingPathComponent("a.txt"),
+                             atomically: true, encoding: .utf8)
+        _ = try GitCLI.run(["add", "a.txt"], in: repoRoot)
+        // Also add a new tracked-then-staged file
+        try "new".write(to: repoRoot.appendingPathComponent("c.txt"),
+                        atomically: true, encoding: .utf8)
+        _ = try GitCLI.run(["add", "c.txt"], in: repoRoot)
+
+        let svc = WorktreeService()
+        let s = try svc.status(at: repoRoot)
+        XCTAssertTrue(s.isDirty)
+        XCTAssertEqual(s.changedFiles, 2)
+    }
 }
