@@ -106,4 +106,29 @@ final class WorktreeServiceTests: XCTestCase {
         XCTAssertEqual(entries.count, 2)
         XCTAssertTrue(entries.contains { $0.branch == "feat/existing" })
     }
+
+    func test_remove_deletesWorktree() throws {
+        let svc = WorktreeService()
+        let dest = repoRoot.appendingPathComponent(".claude/worktrees/feat-r")
+        try svc.add(repoRoot: repoRoot, branch: "feat/r", base: "main", path: dest, createBranch: true)
+        try svc.remove(repoRoot: repoRoot, path: dest, force: false)
+        let entries = try svc.list(in: repoRoot)
+        XCTAssertEqual(entries.count, 1)
+    }
+
+    func test_status_cleanWorktree() throws {
+        let svc = WorktreeService()
+        let s = try svc.status(at: repoRoot)
+        XCTAssertFalse(s.isDirty)
+        XCTAssertEqual(s.changedFiles, 0)
+    }
+
+    func test_status_dirtyWorktree() throws {
+        try "changed".write(to: repoRoot.appendingPathComponent("b.txt"),
+                            atomically: true, encoding: .utf8)
+        let svc = WorktreeService()
+        let s = try svc.status(at: repoRoot)
+        XCTAssertTrue(s.isDirty)
+        XCTAssertEqual(s.changedFiles, 1)
+    }
 }

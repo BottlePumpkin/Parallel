@@ -87,3 +87,50 @@ extension WorktreeService {
         }
     }
 }
+
+extension WorktreeService {
+    /// `git worktree remove <path>` (optionally with `--force`).
+    func remove(repoRoot: URL, path: URL, force: Bool) throws {
+        var args = ["worktree", "remove"]
+        if force { args.append("--force") }
+        args.append(path.path)
+        let r = try GitCLI.run(args, in: repoRoot)
+        guard r.exitCode == 0 else {
+            throw ServiceError.gitFailed(stderr: r.stderr, exitCode: r.exitCode)
+        }
+    }
+
+    /// Run `git status --porcelain` and (if upstream is set) `git rev-list` to
+    /// populate a `WorktreeStatus`.
+    /// - Returns: status with `isDirty`, `changedFiles`, `ahead`, `behind`, `lastCheckedAt`.
+    func status(at path: URL) throws -> WorktreeStatus {
+        var out = WorktreeStatus()
+        out.lastCheckedAt = Date()
+
+        let porcelain = try GitCLI.run(["status", "--porcelain"], in: path)
+        guard porcelain.exitCode == 0 else {
+            throw ServiceError.gitFailed(stderr: porcelain.stderr, exitCode: porcelain.exitCode)
+        }
+        let lines = porcelain.stdout.split(separator: "\n", omittingEmptySubsequences: true)
+        out.changedFiles = lines.count
+        out.isDirty = !lines.isEmpty
+
+        // ahead/behind only meaningful if upstream is configured; exit ≠ 0 here is fine.
+        let counts = try GitCLI.run(
+            ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"],
+            in: path
+        )
+        if counts.exitCode == 0 {
+            let parts = counts.stdout
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .split(separator: "\t")
+            if parts.count == 2,
+               let ahead = Int(parts[0]),
+               let behind = Int(parts[1]) {
+                out.ahead = ahead
+                out.behind = behind
+            }
+        }
+        return out
+    }
+}
