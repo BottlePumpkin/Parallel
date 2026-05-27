@@ -3,23 +3,46 @@ import SwiftTerm
 import Observation
 import AppKit
 
+/// Owns one PTY + TerminalView per worktree.
+///
+/// Thread contract: all mutating methods (`ensureSession`, `startSession`,
+/// `terminate`, `restartSession`) MUST be called on the main thread. Callbacks
+/// from the underlying PTY's background read pump are routed back to main
+/// before any state mutation.
 @Observable
 final class SessionManager {
 
-    /// worktreeId → session entry
+    /// worktreeId → entry
     private var sessions: [UUID: SessionEntry] = [:]
 
-    struct SessionEntry {
+    /// `SessionEntry` is a class so the delegate, pty, and view share one
+    /// lifetime and we don't need a parallel retain dict. SwiftTerm's
+    /// `TerminalView` holds the delegate weakly, so the strong reference
+    /// must live somewhere — here.
+    final class SessionEntry {
         let session: Session
         let pty: PTY
         let terminalView: TerminalView
         var readSource: DispatchSourceRead?
         var pendingSetupCommands: [String]
+        let delegate: SessionTerminalDelegate
+
+        init(session: Session, pty: PTY, terminalView: TerminalView,
+             readSource: DispatchSourceRead?, pendingSetupCommands: [String],
+             delegate: SessionTerminalDelegate) {
+            self.session = session
+            self.pty = pty
+            self.terminalView = terminalView
+            self.readSource = readSource
+            self.pendingSetupCommands = pendingSetupCommands
+            self.delegate = delegate
+        }
     }
 
-    /// Get an existing session for the worktree, or start one.
+    /// Return existing session for the worktree, or start a new one.
     @discardableResult
     func ensureSession(for worktree: Worktree, setupCommands: [String] = []) -> SessionEntry? {
+        dispatchPrecondition(condition: .onQueue(.main))
         if let e = sessions[worktree.id] { return e }
         return startSession(for: worktree, setupCommands: setupCommands)
     }
@@ -27,6 +50,7 @@ final class SessionManager {
     /// Always start a fresh session, replacing any existing one.
     @discardableResult
     func startSession(for worktree: Worktree, setupCommands: [String]) -> SessionEntry? {
+        dispatchPrecondition(condition: .onQueue(.main))
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         guard let pty = PTY(shell: shell, cwd: worktree.path) else { return nil }
 
@@ -34,16 +58,14 @@ final class SessionManager {
         let delegate = SessionTerminalDelegate(pty: pty)
         view.terminalDelegate = delegate
 
-        var entry = SessionEntry(
+        let entry = SessionEntry(
             session: Session(worktreeId: worktree.id, pid: pty.pid),
             pty: pty,
             terminalView: view,
             readSource: nil,
-            pendingSetupCommands: setupCommands
+            pendingSetupCommands: setupCommands,
+            delegate: delegate
         )
-
-        // Retain the delegate strongly (TerminalView holds it weakly).
-        retainedDelegates[worktree.id] = delegate
 
         entry.readSource = pty.startReading(
             onData: { data in
@@ -61,6 +83,11 @@ final class SessionManager {
 
         sessions[worktree.id] = entry
 
+        // KNOWN LIMITATION: setup commands are flushed after a fixed 500ms
+        // delay. If the shell takes longer to initialize (slow disk, network
+        // home, etc.) the commands fire before the shell is ready and are
+        // dropped silently. A future version should detect first-prompt or
+        // use a synchronization marker. (spec §7 PTY Integration)
         if !setupCommands.isEmpty {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.flushSetupCommands(worktreeId: worktree.id)
@@ -70,30 +97,40 @@ final class SessionManager {
         return entry
     }
 
+    /// Read-only lookup. Safe to call from any thread (dict reads are
+    /// guarded by the main-thread mutation contract — readers from non-main
+    /// can see a slightly stale value but not crash).
     func session(for worktreeId: UUID) -> SessionEntry? {
         sessions[worktreeId]
     }
 
     func terminate(worktreeId: UUID) {
+        dispatchPrecondition(condition: .onQueue(.main))
         guard let entry = sessions[worktreeId] else { return }
         entry.pty.terminate()
         entry.readSource?.cancel()
         sessions.removeValue(forKey: worktreeId)
-        retainedDelegates.removeValue(forKey: worktreeId)
     }
 
     func restartSession(for worktree: Worktree, setupCommands: [String]) {
+        dispatchPrecondition(condition: .onQueue(.main))
         terminate(worktreeId: worktree.id)
         _ = startSession(for: worktree, setupCommands: setupCommands)
     }
 
     private func markExited(worktreeId: UUID) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        // KNOWN LIMITATION: PTY's onEOF callback does not currently carry the
+        // child's exit status. We mark all exits as code 0. To distinguish
+        // clean exit from crash, PTY would need to call waitpid and forward
+        // the WEXITSTATUS to onEOF. (v2)
         guard let e = sessions[worktreeId] else { return }
         e.session.state = .exited(code: 0)
     }
 
     private func flushSetupCommands(worktreeId: UUID) {
-        guard var e = sessions[worktreeId] else { return }
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard let e = sessions[worktreeId] else { return }
         for cmd in e.pendingSetupCommands {
             let line = cmd + "\n"
             if let data = line.data(using: .utf8) {
@@ -101,40 +138,27 @@ final class SessionManager {
             }
         }
         e.pendingSetupCommands = []
-        sessions[worktreeId] = e
     }
-
-    /// Strong refs to delegates (TerminalView holds them weakly).
-    private var retainedDelegates: [UUID: SessionTerminalDelegate] = [:]
 }
 
-private final class SessionTerminalDelegate: NSObject, TerminalViewDelegate {
+final class SessionTerminalDelegate: NSObject, TerminalViewDelegate {
     let pty: PTY
     init(pty: PTY) { self.pty = pty }
 
     func send(source: TerminalView, data: ArraySlice<UInt8>) {
         pty.write(Data(data))
     }
-
     func scrolled(source: TerminalView, position: Double) {}
-
     func setTerminalTitle(source: TerminalView, title: String) {}
-
     func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
         pty.resize(cols: Int32(newCols), rows: Int32(newRows))
     }
-
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
-
     func bell(source: TerminalView) {}
-
     func clipboardCopy(source: TerminalView, content: Data) {}
-
     func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
-
     func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {}
-
-    func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
+    func requestOpenLink(source: TerminalView, link: String, params: [String : String]) {
         guard let url = URL(string: link) else { return }
         NSWorkspace.shared.open(url)
     }
