@@ -1,9 +1,9 @@
 import Foundation
 
 extension Date {
-    /// Truncates to millisecond precision so ISO8601 (3 decimal places) round-trips exactly.
-    var truncatedToMilliseconds: Date {
-        let ms = (timeIntervalSinceReferenceDate * 1000).rounded(.towardZero) / 1000
-        return Date(timeIntervalSinceReferenceDate: ms)
+    /// Truncates to whole-second precision so default ISO8601 round-trips exactly.
+    /// Sub-second precision has no semantic value for the timestamps we persist.
+    var truncatedToSeconds: Date {
+        Date(timeIntervalSinceReferenceDate: timeIntervalSinceReferenceDate.rounded(.towardZero))
     }
 }

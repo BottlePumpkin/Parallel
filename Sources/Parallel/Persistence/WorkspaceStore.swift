@@ -85,10 +85,7 @@ final class WorkspaceStore {
 private extension JSONEncoder {
     static var iso: JSONEncoder {
         let e = JSONEncoder()
-        e.dateEncodingStrategy = .custom { date, encoder in
-            var container = encoder.singleValueContainer()
-            try container.encode(WorkspaceStoreDateFormatter.string(from: date))
-        }
+        e.dateEncodingStrategy = .iso8601
         e.outputFormatting = [.prettyPrinted, .sortedKeys]
         return e
     }
@@ -97,27 +94,7 @@ private extension JSONEncoder {
 private extension JSONDecoder {
     static var iso: JSONDecoder {
         let d = JSONDecoder()
-        d.dateDecodingStrategy = .custom { decoder in
-            let container = try decoder.singleValueContainer()
-            let raw = try container.decode(String.self)
-            guard let date = WorkspaceStoreDateFormatter.date(from: raw) else {
-                throw DecodingError.dataCorruptedError(
-                    in: container,
-                    debugDescription: "Invalid ISO8601 (with fractional seconds): \(raw)"
-                )
-            }
-            return date
-        }
+        d.dateDecodingStrategy = .iso8601
         return d
     }
-}
-
-private enum WorkspaceStoreDateFormatter {
-    private static let formatter: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
-    static func string(from date: Date) -> String { formatter.string(from: date) }
-    static func date(from string: String) -> Date? { formatter.date(from: string) }
 }
