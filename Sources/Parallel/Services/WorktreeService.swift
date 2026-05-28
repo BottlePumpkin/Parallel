@@ -155,3 +155,14 @@ extension WorktreeService {
             .filter { !$0.isEmpty }
     }
 }
+
+extension WorktreeService {
+    /// `git branch -D <name>` — force delete a local branch.
+    /// Returns silently on success; throws ServiceError.gitFailed otherwise.
+    func deleteBranch(repoRoot: URL, branch: String) throws {
+        let r = try GitCLI.run(["branch", "-D", branch], in: repoRoot)
+        guard r.exitCode == 0 else {
+            throw ServiceError.gitFailed(stderr: r.stderr, exitCode: r.exitCode)
+        }
+    }
+}

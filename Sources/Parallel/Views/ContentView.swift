@@ -60,15 +60,12 @@ struct ContentView: View {
         )) { wrapper in
             ImportWorktreesSheet(repoId: wrapper.id)
         }
-        .alert("Delete worktree?", isPresented: Binding(
-            get: { pendingDeleteId != nil },
-            set: { if !$0 { pendingDeleteId = nil } }
-        )) {
-            Button("Delete", role: .destructive) { confirmDelete() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            if let id = pendingDeleteId, let wt = store.worktree(id: id) {
-                Text("This will remove the worktree at \(wt.path.lastPathComponent). The branch is preserved.")
+        .sheet(item: Binding(
+            get: { pendingDeleteId.flatMap { store.worktree(id: $0) } },
+            set: { if $0 == nil { pendingDeleteId = nil } }
+        )) { wt in
+            DeleteWorktreeSheet(worktree: wt) { alsoDeleteBranch in
+                confirmDelete(alsoDeleteBranch: alsoDeleteBranch)
             }
         }
         .alert("Rename worktree", isPresented: Binding(
@@ -123,21 +120,24 @@ struct ContentView: View {
         renameTargetId = nil
     }
 
-    private func confirmDelete() {
+    private func confirmDelete(alsoDeleteBranch: Bool) {
         guard let id = pendingDeleteId, let wt = store.worktree(id: id),
               let repo = store.repos.first(where: { $0.id == wt.repoId }) else {
             pendingDeleteId = nil
             return
         }
         sessionManager.terminate(worktreeId: id)
+        let svc = WorktreeService()
         do {
-            try WorktreeService().remove(repoRoot: repo.root, path: wt.path, force: false)
-            store.removeWorktree(id: id)
+            try svc.remove(repoRoot: repo.root, path: wt.path, force: false)
         } catch {
             // Fallback: force remove (e.g., uncommitted changes blocked the normal path)
-            try? WorktreeService().remove(repoRoot: repo.root, path: wt.path, force: true)
-            store.removeWorktree(id: id)
+            try? svc.remove(repoRoot: repo.root, path: wt.path, force: true)
         }
+        if alsoDeleteBranch {
+            try? svc.deleteBranch(repoRoot: repo.root, branch: wt.branch)
+        }
+        store.removeWorktree(id: id)
         pendingDeleteId = nil
     }
 }
