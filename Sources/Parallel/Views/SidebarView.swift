@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SidebarActions {
     var delete: (UUID) -> Void
+    var untrack: (UUID) -> Void
     var addWorktree: (UUID) -> Void
     var importWorktrees: (UUID) -> Void
     var rename: (UUID) -> Void
@@ -28,6 +29,9 @@ struct SidebarView: View {
                                 .contextMenu {
                                     Button("Rename…") { actions.rename(wt.id) }
                                     Divider()
+                                    Button("Remove from Parallel") {
+                                        actions.untrack(wt.id)
+                                    }
                                     Button("Delete Worktree…", role: .destructive) {
                                         actions.delete(wt.id)
                                     }

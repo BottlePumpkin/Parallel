@@ -20,6 +20,10 @@ struct ContentView: View {
                 selection: $selectedWorktreeId,
                 actions: SidebarActions(
                     delete: { id in pendingDeleteId = id },
+                    untrack: { id in
+                        sessionManager.terminate(worktreeId: id)
+                        store.removeWorktree(id: id)
+                    },
                     addWorktree: { repoId in
                         newWorktreeInitialRepoId = repoId
                         showNewWorktree = true
