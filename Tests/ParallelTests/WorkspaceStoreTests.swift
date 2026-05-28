@@ -64,4 +64,26 @@ final class WorkspaceStoreTests: XCTestCase {
         store.removeWorktree(id: wt.id)
         XCTAssertTrue(store.worktrees.isEmpty)
     }
+
+    func test_moveWorktrees_reordersInSection() {
+        let store = WorkspaceStore(directory: tempDir)
+        let repoA = Repo(root: URL(fileURLWithPath: "/tmp/a"), displayName: "A")
+        let repoB = Repo(root: URL(fileURLWithPath: "/tmp/b"), displayName: "B")
+        store.addRepo(repoA)
+        store.addRepo(repoB)
+        let a1 = Worktree(repoId: repoA.id, path: URL(fileURLWithPath: "/tmp/a/1"), branch: "a1", displayName: "a1")
+        let a2 = Worktree(repoId: repoA.id, path: URL(fileURLWithPath: "/tmp/a/2"), branch: "a2", displayName: "a2")
+        let a3 = Worktree(repoId: repoA.id, path: URL(fileURLWithPath: "/tmp/a/3"), branch: "a3", displayName: "a3")
+        let b1 = Worktree(repoId: repoB.id, path: URL(fileURLWithPath: "/tmp/b/1"), branch: "b1", displayName: "b1")
+        for wt in [a1, a2, a3, b1] { store.addWorktree(wt) }
+
+        // Move repoA's index 0 (a1) to position 2 (after a3). With SwiftUI
+        // semantics that means: target slot in the section after the move is 2.
+        store.moveWorktrees(in: repoA.id, from: IndexSet(integer: 0), to: 3)
+        let aOrder = store.worktrees.filter { $0.repoId == repoA.id }.map(\.displayName)
+        XCTAssertEqual(aOrder, ["a2", "a3", "a1"])
+        // RepoB untouched.
+        let bOrder = store.worktrees.filter { $0.repoId == repoB.id }.map(\.displayName)
+        XCTAssertEqual(bOrder, ["b1"])
+    }
 }

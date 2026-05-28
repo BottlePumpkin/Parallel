@@ -37,6 +37,9 @@ struct SidebarView: View {
                                     }
                                 }
                         }
+                        .onMove { offsets, destination in
+                            store.moveWorktrees(in: repo.id, from: offsets, to: destination)
+                        }
                     }
                 } header: {
                     HStack {

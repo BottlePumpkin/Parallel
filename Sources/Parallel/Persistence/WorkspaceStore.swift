@@ -169,6 +169,22 @@ final class WorkspaceStore {
         try? save()
     }
 
+    /// Reorder worktrees belonging to `repoId`. Indices are in the section's
+    /// filtered view (as ForEach.onMove passes them); they're translated into
+    /// the full `worktrees` array here so other repos' ordering is preserved.
+    func moveWorktrees(in repoId: UUID, from offsets: IndexSet, to destination: Int) {
+        let repoIndices = worktrees.enumerated()
+            .filter { $0.element.repoId == repoId }
+            .map { $0.offset }
+        guard !repoIndices.isEmpty else { return }
+        let sourceFullIndices = offsets.map { repoIndices[$0] }
+        let destFullIndex = destination < repoIndices.count
+            ? repoIndices[destination]
+            : (repoIndices.last.map { $0 + 1 } ?? worktrees.count)
+        worktrees.move(fromOffsets: IndexSet(sourceFullIndices), toOffset: destFullIndex)
+        try? save()
+    }
+
     func rename(worktreeId: UUID, to displayName: String) {
         let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
