@@ -16,6 +16,10 @@ struct NewWorktreeSheet: View {
     @State private var errorMessage: String?
     @State private var availableBranches: WorktreeService.BranchList = .init(local: [], remotes: [])
 
+    /// Cap on remote-tracking refs shown in the Base dropdown. Anything older
+    /// is still selectable via direct typing.
+    private let remoteDisplayCap = 15
+
     private let svc = WorktreeService()
 
     init(initialRepoId: UUID? = nil) {
@@ -47,9 +51,18 @@ struct NewWorktreeSheet: View {
             HStack {
                 TextField("Base", text: $base).disabled(!createBranch)
                 Menu {
-                    if availableBranches.local.isEmpty && availableBranches.remotes.isEmpty {
+                    if availableBranches.local.isEmpty
+                        && availableBranches.remotes.isEmpty
+                        && recentBases.isEmpty {
                         Text("(no branches)").foregroundStyle(.secondary)
                     } else {
+                        if !recentBases.isEmpty {
+                            Section("Recent") {
+                                ForEach(recentBases, id: \.self) { b in
+                                    Button(b) { base = b }
+                                }
+                            }
+                        }
                         if !availableBranches.local.isEmpty {
                             Section("Local") {
                                 ForEach(availableBranches.local, id: \.self) { b in
@@ -59,8 +72,12 @@ struct NewWorktreeSheet: View {
                         }
                         if !availableBranches.remotes.isEmpty {
                             Section("Remotes") {
-                                ForEach(availableBranches.remotes, id: \.self) { b in
+                                ForEach(availableBranches.remotes.prefix(remoteDisplayCap), id: \.self) { b in
                                     Button(b) { base = b }
+                                }
+                                if availableBranches.remotes.count > remoteDisplayCap {
+                                    Text("…\(availableBranches.remotes.count - remoteDisplayCap) more")
+                                        .foregroundStyle(.secondary)
                                 }
                             }
                         }
@@ -71,7 +88,7 @@ struct NewWorktreeSheet: View {
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
-                .disabled(!createBranch || (availableBranches.local.isEmpty && availableBranches.remotes.isEmpty))
+                .disabled(!createBranch)
                 .help("Pick from existing branches")
             }
             TextField("Display name", text: $displayName)
@@ -104,6 +121,10 @@ struct NewWorktreeSheet: View {
         }
     }
 
+    private var recentBases: [String] {
+        selectedRepo?.recentBases ?? []
+    }
+
     private func loadBranches() {
         guard let repo = selectedRepo else {
             availableBranches = .init(local: [], remotes: [])
@@ -111,11 +132,15 @@ struct NewWorktreeSheet: View {
         }
         availableBranches = (try? svc.listBranches(in: repo.root))
             ?? .init(local: [], remotes: [])
-        // If current base isn't in the list, fall back to most-recent local
-        // branch (or remote if no locals).
-        let allKnown = Set(availableBranches.local + availableBranches.remotes)
-        if !allKnown.isEmpty, !allKnown.contains(base) {
-            base = availableBranches.local.first ?? availableBranches.remotes.first ?? base
+        // Base prefill priority: most-recently-used base → first local →
+        // first remote → keep typed value. Only swap if the current value
+        // wasn't deliberately typed (i.e., it's not in any known list).
+        let known = Set(availableBranches.local + availableBranches.remotes + recentBases)
+        if !known.isEmpty, !known.contains(base) {
+            base = recentBases.first
+                ?? availableBranches.local.first
+                ?? availableBranches.remotes.first
+                ?? base
         }
     }
 
@@ -166,6 +191,7 @@ struct NewWorktreeSheet: View {
                               displayName: displayName.isEmpty ? sanitizedName : displayName,
                               setupCommands: lines)
             store.addWorktree(wt)
+            store.recordBase(repoId: repo.id, base: base)
             sessionManager.ensureSession(for: wt, setupCommands: lines)
             dismiss()
         } catch {

@@ -155,6 +155,20 @@ final class WorkspaceStore {
         )
     }
 
+    /// Push `base` to the front of the repo's MRU base list (dedup, capped at 5).
+    func recordBase(repoId: UUID, base: String) {
+        let trimmed = base.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let idx = repos.firstIndex(where: { $0.id == repoId }) else { return }
+        var bases = repos[idx].recentBases
+        bases.removeAll { $0 == trimmed }
+        bases.insert(trimmed, at: 0)
+        if bases.count > 5 { bases = Array(bases.prefix(5)) }
+        guard repos[idx].recentBases != bases else { return }
+        repos[idx].recentBases = bases
+        try? save()
+    }
+
     func rename(worktreeId: UUID, to displayName: String) {
         let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
