@@ -70,6 +70,10 @@ final class StatusWatcher {
                 do {
                     let s = try self.svc.status(at: wt.path)
                     DispatchQueue.main.async {
+                        // Skip the write if the value didn't change — otherwise
+                        // every 5s tick triggers a sidebar re-render even when
+                        // nothing actually moved.
+                        guard self.store.statuses[wt.id] != s else { return }
                         self.store.statuses[wt.id] = s
                     }
                 } catch {
@@ -78,6 +82,7 @@ final class StatusWatcher {
                         var s = self.store.statuses[wt.id] ?? WorktreeStatus()
                         s.lastError = error.localizedDescription
                         s.lastCheckedAt = Date()
+                        guard self.store.statuses[wt.id] != s else { return }
                         self.store.statuses[wt.id] = s
                     }
                 }

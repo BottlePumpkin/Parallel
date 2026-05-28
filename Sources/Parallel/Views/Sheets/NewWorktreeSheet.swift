@@ -144,9 +144,7 @@ struct NewWorktreeSheet: View {
         let raw = repo.root.appendingPathComponent(repo.worktreeBaseDir)
             .appendingPathComponent(sanitizedName)
         let path = uniquePath(base: raw)
-        let lines = setupCommands.split(separator: "\n")
-            .map { String($0).trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
+        let lines = setupCommands.nonEmptyLines()
         do {
             try svc.add(repoRoot: repo.root, branch: branch, base: base,
                         path: path, createBranch: createBranch)

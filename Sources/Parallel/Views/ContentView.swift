@@ -18,18 +18,20 @@ struct ContentView: View {
         NavigationSplitView {
             SidebarView(
                 selection: $selectedWorktreeId,
-                onDelete: { id in pendingDeleteId = id },
-                onAddWorktree: { repoId in
-                    newWorktreeInitialRepoId = repoId
-                    showNewWorktree = true
-                },
-                onImportWorktrees: { repoId in
-                    importWorktreesRepoId = repoId
-                },
-                onRename: { id in
-                    renameText = store.worktree(id: id)?.displayName ?? ""
-                    renameTargetId = id
-                }
+                actions: SidebarActions(
+                    delete: { id in pendingDeleteId = id },
+                    addWorktree: { repoId in
+                        newWorktreeInitialRepoId = repoId
+                        showNewWorktree = true
+                    },
+                    importWorktrees: { repoId in
+                        importWorktreesRepoId = repoId
+                    },
+                    rename: { id in
+                        renameText = store.worktree(id: id)?.displayName ?? ""
+                        renameTargetId = id
+                    }
+                )
             )
             .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
         } detail: {
@@ -110,14 +112,9 @@ struct ContentView: View {
     }
 
     private func confirmRename() {
+        defer { renameTargetId = nil }
         guard let id = renameTargetId else { return }
-        let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { renameTargetId = nil; return }
-        if let idx = store.worktrees.firstIndex(where: { $0.id == id }) {
-            store.worktrees[idx].displayName = trimmed
-            try? store.save()
-        }
-        renameTargetId = nil
+        store.rename(worktreeId: id, to: renameText)
     }
 
     private func confirmDelete(alsoDeleteBranch: Bool) {

@@ -144,21 +144,41 @@ final class WorkspaceStore {
     func worktree(id: UUID) -> Worktree? {
         worktrees.first { $0.id == id }
     }
+
+    /// Standardized paths of worktrees already tracked under `repoId`, for
+    /// dedup checks when importing or adding worktrees.
+    func registeredPaths(for repoId: UUID) -> Set<URL> {
+        Set(
+            worktrees
+                .filter { $0.repoId == repoId }
+                .map { $0.path.standardizedFileURL }
+        )
+    }
+
+    func rename(worktreeId: UUID, to displayName: String) {
+        let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let idx = worktrees.firstIndex(where: { $0.id == worktreeId }),
+              worktrees[idx].displayName != trimmed
+        else { return }
+        worktrees[idx].displayName = trimmed
+        try? save()
+    }
 }
 
 private extension JSONEncoder {
-    static var iso: JSONEncoder {
+    static let iso: JSONEncoder = {
         let e = JSONEncoder()
         e.dateEncodingStrategy = .iso8601
         e.outputFormatting = [.prettyPrinted, .sortedKeys]
         return e
-    }
+    }()
 }
 
 private extension JSONDecoder {
-    static var iso: JSONDecoder {
+    static let iso: JSONDecoder = {
         let d = JSONDecoder()
         d.dateDecodingStrategy = .iso8601
         return d
-    }
+    }()
 }

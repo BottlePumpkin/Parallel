@@ -17,11 +17,19 @@ final class WorktreeService {
         }
     }
 
-    func list(in repoRoot: URL) throws -> [Entry] {
-        let r = try GitCLI.run(["worktree", "list", "--porcelain"], in: repoRoot)
+    /// Run git in `dir` and require a clean exit. Throws ServiceError.gitFailed
+    /// otherwise. Returns the full result so callers can read stdout.
+    @discardableResult
+    fileprivate func gitOrThrow(_ args: [String], in dir: URL) throws -> GitCLI.Result {
+        let r = try GitCLI.run(args, in: dir)
         guard r.exitCode == 0 else {
             throw ServiceError.gitFailed(stderr: r.stderr, exitCode: r.exitCode)
         }
+        return r
+    }
+
+    func list(in repoRoot: URL) throws -> [Entry] {
+        let r = try gitOrThrow(["worktree", "list", "--porcelain"], in: repoRoot)
         return Self.parseList(r.stdout)
     }
 
@@ -75,16 +83,10 @@ extension WorktreeService {
             at: path.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        let args: [String]
-        if createBranch {
-            args = ["worktree", "add", "-b", branch, path.path, base]
-        } else {
-            args = ["worktree", "add", path.path, branch]
-        }
-        let r = try GitCLI.run(args, in: repoRoot)
-        guard r.exitCode == 0 else {
-            throw ServiceError.gitFailed(stderr: r.stderr, exitCode: r.exitCode)
-        }
+        let args: [String] = createBranch
+            ? ["worktree", "add", "-b", branch, path.path, base]
+            : ["worktree", "add", path.path, branch]
+        try gitOrThrow(args, in: repoRoot)
     }
 }
 
@@ -94,10 +96,7 @@ extension WorktreeService {
         var args = ["worktree", "remove"]
         if force { args.append("--force") }
         args.append(path.path)
-        let r = try GitCLI.run(args, in: repoRoot)
-        guard r.exitCode == 0 else {
-            throw ServiceError.gitFailed(stderr: r.stderr, exitCode: r.exitCode)
-        }
+        try gitOrThrow(args, in: repoRoot)
     }
 
     /// Run `git status --porcelain` and (if upstream is set) `git rev-list` to
@@ -110,10 +109,7 @@ extension WorktreeService {
         var out = WorktreeStatus()
         out.lastCheckedAt = Date()
 
-        let porcelain = try GitCLI.run(["status", "--porcelain"], in: path)
-        guard porcelain.exitCode == 0 else {
-            throw ServiceError.gitFailed(stderr: porcelain.stderr, exitCode: porcelain.exitCode)
-        }
+        let porcelain = try gitOrThrow(["status", "--porcelain"], in: path)
         let lines = porcelain.stdout.split(separator: "\n", omittingEmptySubsequences: true)
         out.changedFiles = lines.count
         out.isDirty = !lines.isEmpty
@@ -142,13 +138,10 @@ extension WorktreeService {
     /// Local branch names in the repo, sorted by most-recent commit date.
     /// Used to suggest a base when creating a worktree.
     func branches(in repoRoot: URL) throws -> [String] {
-        let r = try GitCLI.run(
+        let r = try gitOrThrow(
             ["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/heads/"],
             in: repoRoot
         )
-        guard r.exitCode == 0 else {
-            throw ServiceError.gitFailed(stderr: r.stderr, exitCode: r.exitCode)
-        }
         return r.stdout
             .split(separator: "\n", omittingEmptySubsequences: true)
             .map { String($0).trimmingCharacters(in: .whitespaces) }
@@ -160,9 +153,6 @@ extension WorktreeService {
     /// `git branch -D <name>` — force delete a local branch.
     /// Returns silently on success; throws ServiceError.gitFailed otherwise.
     func deleteBranch(repoRoot: URL, branch: String) throws {
-        let r = try GitCLI.run(["branch", "-D", branch], in: repoRoot)
-        guard r.exitCode == 0 else {
-            throw ServiceError.gitFailed(stderr: r.stderr, exitCode: r.exitCode)
-        }
+        try gitOrThrow(["branch", "-D", branch], in: repoRoot)
     }
 }

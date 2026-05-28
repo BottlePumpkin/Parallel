@@ -87,9 +87,7 @@ struct AddRepoSheet: View {
 
     private func commit() {
         guard let root = selectedRoot else { return }
-        let setupLines = defaultSetupCommands
-            .split(separator: "\n").map { String($0).trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
+        let setupLines = defaultSetupCommands.nonEmptyLines()
 
         // If this repo root is already registered, merge into the existing Repo
         // instead of creating a duplicate group.
@@ -107,11 +105,7 @@ struct AddRepoSheet: View {
         }
 
         // Existing worktree paths under this repo — avoid duplicates.
-        let existingPaths = Set(
-            store.worktrees
-                .filter { $0.repoId == targetRepoId }
-                .map { $0.path.standardizedFileURL }
-        )
+        let existingPaths = store.registeredPaths(for: targetRepoId)
 
         for (idx, entry) in discovered.enumerated() where importChoices[idx] {
             // Skip the main worktree (= repo root itself) — that's the repo, not a worktree to track.

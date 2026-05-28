@@ -84,11 +84,7 @@ struct ImportWorktreesSheet: View {
     private func scan() {
         guard let repo else { errorMessage = "Repo not found"; loading = false; return }
         loading = true
-        let registered = Set(
-            store.worktrees
-                .filter { $0.repoId == repo.id }
-                .map { $0.path.standardizedFileURL }
-        )
+        let registered = store.registeredPaths(for: repo.id)
         do {
             let entries = try svc.list(in: repo.root)
             // Exclude the repo root itself + anything already registered.

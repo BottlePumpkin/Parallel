@@ -1,12 +1,16 @@
 import SwiftUI
 
+struct SidebarActions {
+    var delete: (UUID) -> Void
+    var addWorktree: (UUID) -> Void
+    var importWorktrees: (UUID) -> Void
+    var rename: (UUID) -> Void
+}
+
 struct SidebarView: View {
     @Environment(WorkspaceStore.self) private var store
     @Binding var selection: UUID?
-    let onDelete: (UUID) -> Void
-    let onAddWorktree: (UUID) -> Void
-    let onImportWorktrees: (UUID) -> Void
-    let onRename: (UUID) -> Void
+    let actions: SidebarActions
 
     var body: some View {
         List(selection: $selection) {
@@ -22,10 +26,10 @@ struct SidebarView: View {
                             WorktreeRow(worktree: wt)
                                 .tag(wt.id as UUID?)
                                 .contextMenu {
-                                    Button("Rename…") { onRename(wt.id) }
+                                    Button("Rename…") { actions.rename(wt.id) }
                                     Divider()
                                     Button("Delete Worktree…", role: .destructive) {
-                                        onDelete(wt.id)
+                                        actions.delete(wt.id)
                                     }
                                 }
                         }
@@ -35,8 +39,8 @@ struct SidebarView: View {
                         Text(repo.displayName)
                         Spacer()
                         Menu {
-                            Button("New Worktree…") { onAddWorktree(repo.id) }
-                            Button("Import Existing…") { onImportWorktrees(repo.id) }
+                            Button("New Worktree…") { actions.addWorktree(repo.id) }
+                            Button("Import Existing…") { actions.importWorktrees(repo.id) }
                         } label: {
                             Image(systemName: "plus")
                         }
