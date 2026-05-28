@@ -10,13 +10,7 @@ struct TerminalPaneView: View {
     var body: some View {
         Group {
             if let id = worktreeId, let wt = store.worktree(id: id) {
-                // ensureSession is idempotent — returns existing entry if
-                // already running, or forks a new PTY for first-visit
-                // worktrees. Called from body so any path change auto-
-                // creates a session.
-                let entry = sessionManager.ensureSession(
-                    for: wt, setupCommands: wt.setupCommands
-                )
+                let entry = sessionManager.session(for: wt.id)
                 if let entry, case .running = entry.session.state {
                     // Mount every running session's NSView continuously and
                     // toggle visibility. Re-parenting SwiftTerm's NSView on
@@ -28,6 +22,18 @@ struct TerminalPaneView: View {
                 }
             } else {
                 emptyPlaceholder
+            }
+        }
+        // ensureSession runs OUTSIDE the body closure so SwiftUI's @Observable
+        // dependency tracking doesn't see a mutating call from inside body —
+        // that was triggering a render → mutate → render loop.
+        .task(id: worktreeId) {
+            if let id = worktreeId, let wt = store.worktree(id: id) {
+                await MainActor.run {
+                    _ = sessionManager.ensureSession(
+                        for: wt, setupCommands: wt.setupCommands
+                    )
+                }
             }
         }
     }
