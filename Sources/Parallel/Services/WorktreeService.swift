@@ -147,6 +147,41 @@ extension WorktreeService {
             .map { String($0).trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
     }
+
+    /// Local branches + remote-tracking refs, classified.
+    /// `remotes` excludes the symbolic HEAD pointer (e.g. `origin/HEAD`).
+    /// Both lists are sorted by most-recent commit date.
+    struct BranchList {
+        var local: [String]
+        var remotes: [String]
+    }
+
+    func listBranches(in repoRoot: URL) throws -> BranchList {
+        let r = try gitOrThrow(
+            ["for-each-ref",
+             "--sort=-committerdate",
+             "--format=%(refname:short)|%(refname)",
+             "refs/heads/",
+             "refs/remotes/"],
+            in: repoRoot
+        )
+        var local: [String] = []
+        var remotes: [String] = []
+        for raw in r.stdout.split(separator: "\n", omittingEmptySubsequences: true) {
+            let parts = raw.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
+            guard parts.count == 2 else { continue }
+            let short = String(parts[0]).trimmingCharacters(in: .whitespaces)
+            let full = String(parts[1]).trimmingCharacters(in: .whitespaces)
+            guard !short.isEmpty else { continue }
+            if short.hasSuffix("/HEAD") { continue }
+            if full.hasPrefix("refs/heads/") {
+                local.append(short)
+            } else if full.hasPrefix("refs/remotes/") {
+                remotes.append(short)
+            }
+        }
+        return BranchList(local: local, remotes: remotes)
+    }
 }
 
 extension WorktreeService {

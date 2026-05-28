@@ -14,7 +14,7 @@ struct NewWorktreeSheet: View {
     @State private var setupCommands = ""
     @State private var displayName = ""
     @State private var errorMessage: String?
-    @State private var availableBranches: [String] = []
+    @State private var availableBranches: WorktreeService.BranchList = .init(local: [], remotes: [])
 
     private let svc = WorktreeService()
 
@@ -47,11 +47,22 @@ struct NewWorktreeSheet: View {
             HStack {
                 TextField("Base", text: $base).disabled(!createBranch)
                 Menu {
-                    if availableBranches.isEmpty {
+                    if availableBranches.local.isEmpty && availableBranches.remotes.isEmpty {
                         Text("(no branches)").foregroundStyle(.secondary)
                     } else {
-                        ForEach(availableBranches, id: \.self) { b in
-                            Button(b) { base = b }
+                        if !availableBranches.local.isEmpty {
+                            Section("Local") {
+                                ForEach(availableBranches.local, id: \.self) { b in
+                                    Button(b) { base = b }
+                                }
+                            }
+                        }
+                        if !availableBranches.remotes.isEmpty {
+                            Section("Remotes") {
+                                ForEach(availableBranches.remotes, id: \.self) { b in
+                                    Button(b) { base = b }
+                                }
+                            }
                         }
                     }
                 } label: {
@@ -60,7 +71,7 @@ struct NewWorktreeSheet: View {
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
-                .disabled(!createBranch || availableBranches.isEmpty)
+                .disabled(!createBranch || (availableBranches.local.isEmpty && availableBranches.remotes.isEmpty))
                 .help("Pick from existing branches")
             }
             TextField("Display name", text: $displayName)
@@ -95,13 +106,16 @@ struct NewWorktreeSheet: View {
 
     private func loadBranches() {
         guard let repo = selectedRepo else {
-            availableBranches = []
+            availableBranches = .init(local: [], remotes: [])
             return
         }
-        availableBranches = (try? svc.branches(in: repo.root)) ?? []
-        // If current base isn't in the list and the repo has branches, switch to the first.
-        if !availableBranches.isEmpty, !availableBranches.contains(base) {
-            base = availableBranches.first ?? base
+        availableBranches = (try? svc.listBranches(in: repo.root))
+            ?? .init(local: [], remotes: [])
+        // If current base isn't in the list, fall back to most-recent local
+        // branch (or remote if no locals).
+        let allKnown = Set(availableBranches.local + availableBranches.remotes)
+        if !allKnown.isEmpty, !allKnown.contains(base) {
+            base = availableBranches.local.first ?? availableBranches.remotes.first ?? base
         }
     }
 
