@@ -3,17 +3,20 @@ import SwiftTerm
 import Observation
 import AppKit
 
-/// Owns one PTY + TerminalView per worktree.
+/// Owns one or more PTY + TerminalView pairs per worktree (tabs).
 ///
-/// Thread contract: all mutating methods (`ensureSession`, `startSession`,
-/// `terminate`, `restartSession`) MUST be called on the main thread. Callbacks
-/// from the underlying PTY's background read pump are routed back to main
-/// before any state mutation.
+/// Thread contract: all mutating methods MUST be called on the main thread.
+/// Callbacks from the underlying PTY's background read pump are routed back
+/// to main before any state mutation.
 @Observable
 final class SessionManager {
 
-    /// worktreeId → entry
-    private var sessions: [UUID: SessionEntry] = [:]
+    /// sessionId → entry. The single source of truth for live sessions.
+    private var sessionsById: [UUID: SessionEntry] = [:]
+    /// worktreeId → ordered list of sessionIds (tab order).
+    private var orderByWorktree: [UUID: [UUID]] = [:]
+    /// worktreeId → active sessionId in its tab strip.
+    private var activeByWorktree: [UUID: UUID] = [:]
 
     /// `SessionEntry` is a class so the delegate, pty, and view share one
     /// lifetime and we don't need a parallel retain dict. SwiftTerm's
@@ -39,15 +42,46 @@ final class SessionManager {
         }
     }
 
-    /// Return existing session for the worktree, or start a new one.
+    // MARK: - Lookups
+
+    /// Tabs for a worktree, in order.
+    func sessions(for worktreeId: UUID) -> [SessionEntry] {
+        (orderByWorktree[worktreeId] ?? []).compactMap { sessionsById[$0] }
+    }
+
+    /// Active session in a worktree's tab strip, if any. Returns the live
+    /// entry the UI should draw.
+    func activeSession(for worktreeId: UUID) -> SessionEntry? {
+        guard let sid = activeByWorktree[worktreeId] else { return nil }
+        return sessionsById[sid]
+    }
+
+    /// Backward-compatible alias used by UI code that doesn't care which tab.
+    func session(for worktreeId: UUID) -> SessionEntry? {
+        activeSession(for: worktreeId)
+    }
+
+    /// All currently-running sessions across all worktrees. TerminalPaneView
+    /// keeps every one continuously mounted in a ZStack so worktree/tab
+    /// switches don't reparent SwiftTerm's NSView.
+    var allRunningSessions: [SessionEntry] {
+        sessionsById.values.filter {
+            if case .running = $0.session.state { return true }
+            return false
+        }
+    }
+
+    // MARK: - Mutations
+
+    /// Return active session for the worktree, or create the first tab.
     @discardableResult
     func ensureSession(for worktree: Worktree, setupCommands: [String] = []) -> SessionEntry? {
         dispatchPrecondition(condition: .onQueue(.main))
-        if let e = sessions[worktree.id] { return e }
+        if let e = activeSession(for: worktree.id) { return e }
         return startSession(for: worktree, setupCommands: setupCommands)
     }
 
-    /// Always start a fresh session, replacing any existing one.
+    /// Start a new tab in the worktree's strip and make it active.
     @discardableResult
     func startSession(for worktree: Worktree, setupCommands: [String]) -> SessionEntry? {
         dispatchPrecondition(condition: .onQueue(.main))
@@ -63,8 +97,9 @@ final class SessionManager {
         let delegate = SessionTerminalDelegate(pty: pty)
         view.terminalDelegate = delegate
 
+        let session = Session(worktreeId: worktree.id, pid: pty.pid)
         let entry = SessionEntry(
-            session: Session(worktreeId: worktree.id, pid: pty.pid),
+            session: session,
             pty: pty,
             terminalView: view,
             readSource: nil,
@@ -72,6 +107,7 @@ final class SessionManager {
             delegate: delegate
         )
 
+        let sessionId = session.id
         entry.readSource = pty.startReading(
             onData: { data in
                 DispatchQueue.main.async {
@@ -81,75 +117,98 @@ final class SessionManager {
             },
             onEOF: { [weak self] in
                 DispatchQueue.main.async {
-                    self?.markExited(worktreeId: worktree.id)
+                    self?.markExited(sessionId: sessionId)
                 }
             }
         )
 
-        sessions[worktree.id] = entry
+        sessionsById[sessionId] = entry
+        orderByWorktree[worktree.id, default: []].append(sessionId)
+        activeByWorktree[worktree.id] = sessionId
 
-        // KNOWN LIMITATION: setup commands are flushed after a fixed 500ms
-        // delay. If the shell takes longer to initialize (slow disk, network
-        // home, etc.) the commands fire before the shell is ready and are
-        // dropped silently. A future version should detect first-prompt or
-        // use a synchronization marker. (spec §7 PTY Integration)
         if !setupCommands.isEmpty {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.flushSetupCommands(worktreeId: worktree.id)
+                self?.flushSetupCommands(sessionId: sessionId)
             }
         }
 
         return entry
     }
 
-    /// Read-only lookup. Safe to call from any thread (dict reads are
-    /// guarded by the main-thread mutation contract — readers from non-main
-    /// can see a slightly stale value but not crash).
-    func session(for worktreeId: UUID) -> SessionEntry? {
-        sessions[worktreeId]
+    /// Mark a specific tab as the active one in its worktree.
+    func setActive(sessionId: UUID, in worktreeId: UUID) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard let order = orderByWorktree[worktreeId], order.contains(sessionId) else { return }
+        guard activeByWorktree[worktreeId] != sessionId else { return }
+        activeByWorktree[worktreeId] = sessionId
     }
 
-    /// All currently-running sessions. Used by TerminalPaneView to keep
-    /// every session's SwiftTerm view mounted continuously, with only
-    /// the active worktree's view made visible. Re-mounting the same
-    /// NSView across worktree switches corrupted SwiftTerm's internal
-    /// scroll/layout cache; this avoids it.
-    var allRunningSessions: [SessionEntry] {
-        sessions.values.filter {
-            if case .running = $0.session.state { return true }
-            return false
+    /// Terminate a single tab. If it was active, advance active to the
+    /// next tab in the strip (or previous if it was the last).
+    func terminate(sessionId: UUID) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard let entry = sessionsById[sessionId] else { return }
+        let worktreeId = entry.session.worktreeId
+        AppLogger.session.info("terminate session=\(sessionId, privacy: .public) pid=\(entry.pty.pid)")
+        entry.pty.terminate()
+        entry.readSource?.cancel()
+        sessionsById.removeValue(forKey: sessionId)
+
+        var order = orderByWorktree[worktreeId] ?? []
+        if let idx = order.firstIndex(of: sessionId) {
+            order.remove(at: idx)
+            if activeByWorktree[worktreeId] == sessionId {
+                if order.isEmpty {
+                    activeByWorktree.removeValue(forKey: worktreeId)
+                } else {
+                    let nextIdx = min(idx, order.count - 1)
+                    activeByWorktree[worktreeId] = order[nextIdx]
+                }
+            }
+        }
+        if order.isEmpty {
+            orderByWorktree.removeValue(forKey: worktreeId)
+        } else {
+            orderByWorktree[worktreeId] = order
         }
     }
 
+    /// Terminate every tab in a worktree. Used when a worktree is deleted
+    /// or untracked.
     func terminate(worktreeId: UUID) {
         dispatchPrecondition(condition: .onQueue(.main))
-        guard let entry = sessions[worktreeId] else { return }
-        AppLogger.session.info("terminate worktreeId=\(worktreeId, privacy: .public) pid=\(entry.pty.pid)")
-        entry.pty.terminate()
-        entry.readSource?.cancel()
-        sessions.removeValue(forKey: worktreeId)
+        let ids = orderByWorktree[worktreeId] ?? []
+        for sid in ids {
+            terminate(sessionId: sid)
+        }
     }
 
+    /// Restart the active session in a worktree (used by the "Restart Session"
+    /// placeholder button after a shell exits).
     func restartSession(for worktree: Worktree, setupCommands: [String]) {
         dispatchPrecondition(condition: .onQueue(.main))
-        terminate(worktreeId: worktree.id)
+        if let sid = activeByWorktree[worktree.id] {
+            terminate(sessionId: sid)
+        }
         _ = startSession(for: worktree, setupCommands: setupCommands)
     }
 
-    private func markExited(worktreeId: UUID) {
+    // MARK: - Private
+
+    private func markExited(sessionId: UUID) {
         dispatchPrecondition(condition: .onQueue(.main))
         // KNOWN LIMITATION: PTY's onEOF callback does not currently carry the
         // child's exit status. We mark all exits as code 0. To distinguish
         // clean exit from crash, PTY would need to call waitpid and forward
-        // the WEXITSTATUS to onEOF. (v2)
-        guard let e = sessions[worktreeId] else { return }
-        AppLogger.session.info("exited worktreeId=\(worktreeId, privacy: .public) pid=\(e.pty.pid)")
+        // the WEXITSTATUS to onEOF.
+        guard let e = sessionsById[sessionId] else { return }
+        AppLogger.session.info("exited session=\(sessionId, privacy: .public) pid=\(e.pty.pid)")
         e.session.state = .exited(code: 0)
     }
 
-    private func flushSetupCommands(worktreeId: UUID) {
+    private func flushSetupCommands(sessionId: UUID) {
         dispatchPrecondition(condition: .onQueue(.main))
-        guard let e = sessions[worktreeId] else { return }
+        guard let e = sessionsById[sessionId] else { return }
         for cmd in e.pendingSetupCommands {
             let line = cmd + "\n"
             if let data = line.data(using: .utf8) {
@@ -162,13 +221,12 @@ final class SessionManager {
     /// Best installed font for the terminal. Prefers Nerd Fonts so popular
     /// prompts (powerlevel10k, starship) render correctly. Falls back to the
     /// user's likely iTerm font (D2Coding) and finally Menlo.
-    /// Picked once at first access and cached.
     static let preferredTerminalFont: NSFont = {
         let size: CGFloat = 13
         let candidates = [
-            "MesloLGS Nerd Font Mono",   // v3 cask (font-meslo-lg-nerd-font)
+            "MesloLGS Nerd Font Mono",
             "MesloLGS Nerd Font",
-            "MesloLGS NF",               // legacy v2 name
+            "MesloLGS NF",
             "JetBrainsMono Nerd Font Mono",
             "JetBrainsMonoNL Nerd Font Mono",
             "Hack Nerd Font Mono",
@@ -194,8 +252,6 @@ final class SessionTerminalDelegate: NSObject, TerminalViewDelegate {
     func scrolled(source: TerminalView, position: Double) {}
     func setTerminalTitle(source: TerminalView, title: String) {}
     func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
-        // SwiftTerm reports cols=-1, rows=0 during the initial layout pass when
-        // the NSView's frame is still 0×0. Guard before forwarding to PTY.
         guard newCols > 0, newRows > 0 else { return }
         pty.resize(cols: Int32(newCols), rows: Int32(newRows))
     }

@@ -10,23 +10,24 @@ struct TerminalPaneView: View {
     var body: some View {
         Group {
             if let id = worktreeId, let wt = store.worktree(id: id) {
-                let entry = sessionManager.session(for: wt.id)
-                if let entry, case .running = entry.session.state {
-                    // Mount every running session's NSView continuously and
-                    // toggle visibility. Re-parenting SwiftTerm's NSView on
-                    // worktree switches corrupted its scroll/layout cache,
-                    // so we never detach — only flip opacity.
-                    activeStack(currentId: wt.id)
-                } else {
-                    deadSessionPlaceholder(for: wt)
+                let active = sessionManager.activeSession(for: wt.id)
+                let tabs = sessionManager.sessions(for: wt.id)
+                VStack(spacing: 0) {
+                    if !tabs.isEmpty {
+                        tabBar(for: wt, tabs: tabs, active: active)
+                    }
+                    if let active, case .running = active.session.state {
+                        activeStack(currentSessionId: active.session.id)
+                    } else if let active {
+                        deadSessionPlaceholder(for: wt, sessionId: active.session.id)
+                    } else {
+                        emptyTabsPlaceholder(for: wt)
+                    }
                 }
             } else {
                 emptyPlaceholder
             }
         }
-        // ensureSession runs OUTSIDE the body closure so SwiftUI's @Observable
-        // dependency tracking doesn't see a mutating call from inside body —
-        // that was triggering a render → mutate → render loop.
         .task(id: worktreeId) {
             if let id = worktreeId, let wt = store.worktree(id: id) {
                 await MainActor.run {
@@ -38,15 +39,93 @@ struct TerminalPaneView: View {
         }
     }
 
-    private func activeStack(currentId: UUID) -> some View {
+    // MARK: - Tab bar
+
+    private func tabBar(for worktree: Worktree,
+                        tabs: [SessionManager.SessionEntry],
+                        active: SessionManager.SessionEntry?) -> some View {
+        HStack(spacing: 4) {
+            ForEach(Array(tabs.enumerated()), id: \.element.session.id) { idx, entry in
+                tabButton(
+                    label: "shell \(idx + 1)",
+                    isActive: entry.session.id == active?.session.id,
+                    isDead: {
+                        if case .exited = entry.session.state { return true }
+                        return false
+                    }(),
+                    select: {
+                        sessionManager.setActive(sessionId: entry.session.id, in: worktree.id)
+                    },
+                    close: {
+                        sessionManager.terminate(sessionId: entry.session.id)
+                    }
+                )
+            }
+            Button {
+                _ = sessionManager.startSession(for: worktree, setupCommands: worktree.setupCommands)
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 11))
+            }
+            .buttonStyle(.borderless)
+            .help("New tab in this worktree")
+            Spacer()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(.thinMaterial)
+    }
+
+    private func tabButton(label: String,
+                           isActive: Bool,
+                           isDead: Bool,
+                           select: @escaping () -> Void,
+                           close: @escaping () -> Void) -> some View {
+        HStack(spacing: 4) {
+            Button(action: select) {
+                HStack(spacing: 4) {
+                    if isDead {
+                        Image(systemName: "moon.zzz.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(label).font(.caption)
+                }
+                .padding(.horizontal, 6)
+            }
+            .buttonStyle(.borderless)
+
+            Button(action: close) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .help("Close this tab")
+        }
+        .padding(.vertical, 2)
+        .padding(.trailing, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .fill(isActive ? Color.accentColor.opacity(0.25) : Color.clear)
+        )
+    }
+
+    // MARK: - Terminal stack
+
+    /// Continuously-mounted ZStack of every running session's NSView.
+    /// Only the currently-active session has opacity 1 and accepts input.
+    private func activeStack(currentSessionId: UUID) -> some View {
         ZStack {
             ForEach(sessionManager.allRunningSessions, id: \.session.id) { entry in
                 MountedTerminalView(terminalView: entry.terminalView)
-                    .opacity(entry.session.worktreeId == currentId ? 1 : 0)
-                    .allowsHitTesting(entry.session.worktreeId == currentId)
+                    .opacity(entry.session.id == currentSessionId ? 1 : 0)
+                    .allowsHitTesting(entry.session.id == currentSessionId)
             }
         }
     }
+
+    // MARK: - Placeholders
 
     private var emptyPlaceholder: some View {
         VStack(spacing: 8) {
@@ -59,7 +138,19 @@ struct TerminalPaneView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func deadSessionPlaceholder(for wt: Worktree) -> some View {
+    private func emptyTabsPlaceholder(for wt: Worktree) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: "terminal").font(.system(size: 40)).foregroundStyle(.tertiary)
+            Text("No tabs").font(.headline)
+            Button("Open Tab") {
+                _ = sessionManager.startSession(for: wt, setupCommands: wt.setupCommands)
+            }
+            .keyboardShortcut(.defaultAction)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func deadSessionPlaceholder(for wt: Worktree, sessionId: UUID) -> some View {
         VStack(spacing: 12) {
             Image(systemName: "moon.zzz.fill")
                 .font(.system(size: 40))
@@ -71,10 +162,16 @@ struct TerminalPaneView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .padding(.horizontal, 40)
-            Button("Restart Session") {
-                sessionManager.restartSession(for: wt, setupCommands: wt.setupCommands)
+            HStack {
+                Button("Restart") {
+                    sessionManager.terminate(sessionId: sessionId)
+                    _ = sessionManager.startSession(for: wt, setupCommands: wt.setupCommands)
+                }
+                .keyboardShortcut(.defaultAction)
+                Button("Close Tab") {
+                    sessionManager.terminate(sessionId: sessionId)
+                }
             }
-            .keyboardShortcut(.defaultAction)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
