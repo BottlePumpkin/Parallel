@@ -120,22 +120,26 @@ final class WorkspaceStore {
     }
 
     func addRepo(_ repo: Repo) {
+        AppLogger.store.info("addRepo \(repo.displayName, privacy: .public)")
         repos.append(repo)
         try? save()
     }
 
     func addWorktree(_ wt: Worktree) {
+        AppLogger.store.info("addWorktree \(wt.displayName, privacy: .public) branch=\(wt.branch, privacy: .public)")
         worktrees.append(wt)
         try? save()
     }
 
     func removeWorktree(id: UUID) {
+        AppLogger.store.info("removeWorktree id=\(id, privacy: .public)")
         worktrees.removeAll { $0.id == id }
         if lastSelectedWorktreeId == id { lastSelectedWorktreeId = nil }
         try? save()
     }
 
     func removeRepo(id: UUID) {
+        AppLogger.store.info("removeRepo id=\(id, privacy: .public)")
         worktrees.removeAll { $0.repoId == id }
         repos.removeAll { $0.id == id }
         try? save()

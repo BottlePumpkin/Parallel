@@ -52,7 +52,11 @@ final class SessionManager {
     func startSession(for worktree: Worktree, setupCommands: [String]) -> SessionEntry? {
         dispatchPrecondition(condition: .onQueue(.main))
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
-        guard let pty = PTY(shell: shell, cwd: worktree.path) else { return nil }
+        guard let pty = PTY(shell: shell, cwd: worktree.path) else {
+            AppLogger.session.error("PTY fork failed for \(worktree.displayName, privacy: .public)")
+            return nil
+        }
+        AppLogger.session.info("start \(worktree.displayName, privacy: .public) pid=\(pty.pid)")
 
         let view = TerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 500))
         view.font = Self.preferredTerminalFont
@@ -120,6 +124,7 @@ final class SessionManager {
     func terminate(worktreeId: UUID) {
         dispatchPrecondition(condition: .onQueue(.main))
         guard let entry = sessions[worktreeId] else { return }
+        AppLogger.session.info("terminate worktreeId=\(worktreeId, privacy: .public) pid=\(entry.pty.pid)")
         entry.pty.terminate()
         entry.readSource?.cancel()
         sessions.removeValue(forKey: worktreeId)
@@ -138,6 +143,7 @@ final class SessionManager {
         // clean exit from crash, PTY would need to call waitpid and forward
         // the WEXITSTATUS to onEOF. (v2)
         guard let e = sessions[worktreeId] else { return }
+        AppLogger.session.info("exited worktreeId=\(worktreeId, privacy: .public) pid=\(e.pty.pid)")
         e.session.state = .exited(code: 0)
     }
 
