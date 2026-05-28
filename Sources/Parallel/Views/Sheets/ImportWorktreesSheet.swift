@@ -11,13 +11,22 @@ struct ImportWorktreesSheet: View {
     let repoId: UUID
 
     @State private var candidates: [WorktreeService.Entry] = []
-    @State private var importChoices: [Bool] = []
+    @State private var selected: Set<URL> = []
+    @State private var search: String = ""
     @State private var loading = true
     @State private var errorMessage: String?
 
     private let svc = WorktreeService()
 
     private var repo: Repo? { store.repos.first { $0.id == repoId } }
+
+    private var filtered: [WorktreeService.Entry] {
+        let q = search.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return candidates }
+        return candidates.filter {
+            $0.branch.lowercased().contains(q) || $0.path.path.lowercased().contains(q)
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -36,32 +45,66 @@ struct ImportWorktreesSheet: View {
                     .frame(maxWidth: .infinity, minHeight: 120)
             } else {
                 HStack {
-                    Button("Select All") {
-                        importChoices = Array(repeating: true, count: candidates.count)
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    TextField("Filter by branch or path", text: $search)
+                        .textFieldStyle(.plain)
+                    if !search.isEmpty {
+                        Button {
+                            search = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.borderless)
                     }
-                    Button("Deselect All") {
-                        importChoices = Array(repeating: false, count: candidates.count)
-                    }
-                    Spacer()
                 }
-                List {
-                    ForEach(Array(candidates.enumerated()), id: \.offset) { idx, e in
-                        Toggle(isOn: Binding(
-                            get: { importChoices[idx] },
-                            set: { importChoices[idx] = $0 }
-                        )) {
-                            VStack(alignment: .leading) {
-                                Text(e.branch).font(.body)
-                                Text(e.path.path)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(RoundedRectangle(cornerRadius: 6).fill(.quaternary))
+
+                HStack {
+                    Button("Select All (\(filtered.count))") {
+                        for e in filtered { selected.insert(e.path.standardizedFileURL) }
+                    }
+                    .disabled(filtered.isEmpty)
+                    Button("Deselect All") {
+                        for e in filtered { selected.remove(e.path.standardizedFileURL) }
+                    }
+                    .disabled(filtered.isEmpty)
+                    Spacer()
+                    Text("\(selected.count) selected")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if filtered.isEmpty {
+                    Text("No matches.")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 120)
+                } else {
+                    List {
+                        ForEach(filtered, id: \.path) { e in
+                            Toggle(isOn: Binding(
+                                get: { selected.contains(e.path.standardizedFileURL) },
+                                set: { isOn in
+                                    if isOn { selected.insert(e.path.standardizedFileURL) }
+                                    else { selected.remove(e.path.standardizedFileURL) }
+                                }
+                            )) {
+                                VStack(alignment: .leading) {
+                                    Text(e.branch).font(.body)
+                                    Text(e.path.path)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
                             }
                         }
                     }
+                    .frame(minHeight: 160, maxHeight: 320)
                 }
-                .frame(minHeight: 160, maxHeight: 320)
             }
 
             if let errorMessage {
@@ -73,7 +116,7 @@ struct ImportWorktreesSheet: View {
                 Button("Cancel") { dismiss() }
                 Button("Import") { commit() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(loading || candidates.isEmpty || !importChoices.contains(true))
+                    .disabled(loading || candidates.isEmpty || selected.isEmpty)
             }
         }
         .padding(20)
@@ -87,24 +130,28 @@ struct ImportWorktreesSheet: View {
         let registered = store.registeredPaths(for: repo.id)
         do {
             let entries = try svc.list(in: repo.root)
-            // Exclude the repo root itself + anything already registered.
             let rootKey = repo.root.standardizedFileURL
             candidates = entries.filter { e in
                 e.path.standardizedFileURL != rootKey
                     && !registered.contains(e.path.standardizedFileURL)
             }
-            importChoices = Array(repeating: candidates.count == 1, count: candidates.count)
+            // Pre-select if only one candidate.
+            if candidates.count == 1 {
+                selected = [candidates[0].path.standardizedFileURL]
+            } else {
+                selected = []
+            }
         } catch {
             errorMessage = "Failed to scan: \(error.localizedDescription)"
             candidates = []
-            importChoices = []
+            selected = []
         }
         loading = false
     }
 
     private func commit() {
         guard let repo else { return }
-        for (idx, entry) in candidates.enumerated() where importChoices[idx] {
+        for entry in candidates where selected.contains(entry.path.standardizedFileURL) {
             let wt = Worktree(
                 repoId: repo.id,
                 path: entry.path,
