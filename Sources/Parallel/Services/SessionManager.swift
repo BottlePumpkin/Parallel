@@ -105,6 +105,18 @@ final class SessionManager {
         sessions[worktreeId]
     }
 
+    /// All currently-running sessions. Used by TerminalPaneView to keep
+    /// every session's SwiftTerm view mounted continuously, with only
+    /// the active worktree's view made visible. Re-mounting the same
+    /// NSView across worktree switches corrupted SwiftTerm's internal
+    /// scroll/layout cache; this avoids it.
+    var allRunningSessions: [SessionEntry] {
+        sessions.values.filter {
+            if case .running = $0.session.state { return true }
+            return false
+        }
+    }
+
     func terminate(worktreeId: UUID) {
         dispatchPrecondition(condition: .onQueue(.main))
         guard let entry = sessions[worktreeId] else { return }

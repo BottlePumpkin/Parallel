@@ -10,15 +10,34 @@ struct TerminalPaneView: View {
     var body: some View {
         Group {
             if let id = worktreeId, let wt = store.worktree(id: id) {
-                let entry = sessionManager.session(for: wt.id)
+                // ensureSession is idempotent — returns existing entry if
+                // already running, or forks a new PTY for first-visit
+                // worktrees. Called from body so any path change auto-
+                // creates a session.
+                let entry = sessionManager.ensureSession(
+                    for: wt, setupCommands: wt.setupCommands
+                )
                 if let entry, case .running = entry.session.state {
-                    TerminalContainer(worktree: wt)
-                        .id(wt.id)
+                    // Mount every running session's NSView continuously and
+                    // toggle visibility. Re-parenting SwiftTerm's NSView on
+                    // worktree switches corrupted its scroll/layout cache,
+                    // so we never detach — only flip opacity.
+                    activeStack(currentId: wt.id)
                 } else {
                     deadSessionPlaceholder(for: wt)
                 }
             } else {
                 emptyPlaceholder
+            }
+        }
+    }
+
+    private func activeStack(currentId: UUID) -> some View {
+        ZStack {
+            ForEach(sessionManager.allRunningSessions, id: \.session.id) { entry in
+                MountedTerminalView(terminalView: entry.terminalView)
+                    .opacity(entry.session.worktreeId == currentId ? 1 : 0)
+                    .allowsHitTesting(entry.session.worktreeId == currentId)
             }
         }
     }
@@ -55,14 +74,12 @@ struct TerminalPaneView: View {
     }
 }
 
-private struct TerminalContainer: NSViewRepresentable {
-    @Environment(SessionManager.self) private var sessionManager
-    let worktree: Worktree
+/// Wraps a single SwiftTerm NSView. Mounts the exact instance passed in;
+/// updateNSView is a no-op because the wrapped view is owned by SessionManager
+/// and must outlive any SwiftUI view tree changes.
+private struct MountedTerminalView: NSViewRepresentable {
+    let terminalView: TerminalView
 
-    func makeNSView(context: Context) -> TerminalView {
-        let entry = sessionManager.ensureSession(for: worktree, setupCommands: worktree.setupCommands)
-        return entry?.terminalView ?? TerminalView(frame: .zero)
-    }
-
+    func makeNSView(context: Context) -> TerminalView { terminalView }
     func updateNSView(_ nsView: TerminalView, context: Context) {}
 }
