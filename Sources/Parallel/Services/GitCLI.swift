@@ -55,8 +55,12 @@ enum GitCLI {
             group.leave()
         }
 
-        proc.waitUntilExit()
+        // Wait for the drain tasks first — they only return when the child
+        // closes its pipes, which only happens on exit. Calling waitUntilExit
+        // before the drains have started reading could deadlock if the child
+        // fills its pipe buffer before the drains schedule on a worker thread.
         group.wait()
+        proc.waitUntilExit()
 
         let stdout = String(data: outData, encoding: .utf8)
             ?? String(data: outData, encoding: .isoLatin1)

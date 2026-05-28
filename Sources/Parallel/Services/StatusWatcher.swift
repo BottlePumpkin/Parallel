@@ -69,7 +69,8 @@ final class StatusWatcher {
                 defer { self.semaphore.signal() }
                 do {
                     let s = try self.svc.status(at: wt.path)
-                    DispatchQueue.main.async {
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self else { return }
                         // Skip the write if the value didn't change — otherwise
                         // every 5s tick triggers a sidebar re-render even when
                         // nothing actually moved.
@@ -78,7 +79,8 @@ final class StatusWatcher {
                     }
                 } catch {
                     AppLogger.status.error("status failed for \(wt.path.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
-                    DispatchQueue.main.async {
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self else { return }
                         var s = self.store.statuses[wt.id] ?? WorktreeStatus()
                         s.lastError = error.localizedDescription
                         s.lastCheckedAt = Date()

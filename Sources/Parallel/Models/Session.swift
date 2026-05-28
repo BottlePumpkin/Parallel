@@ -1,11 +1,14 @@
 import Foundation
+import Observation
 
 enum SessionState: Equatable {
     case running
     case exited(code: Int32)
 }
 
-/// SwiftTerm view를 SessionManager가 보유하므로 여기선 메타만.
+/// Per-PTY metadata. `state` is observable so SwiftUI views (sidebar state
+/// dot, TerminalPaneView placeholder) re-render when the shell exits.
+@Observable
 final class Session: Identifiable, Equatable {
     let id: UUID
     let worktreeId: UUID
