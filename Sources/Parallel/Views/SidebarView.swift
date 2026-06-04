@@ -28,6 +28,15 @@ struct SidebarView: View {
                                 .tag(wt.id as UUID?)
                                 .contextMenu {
                                     Button("Rename…") { actions.rename(wt.id) }
+                                    Menu("Open in") {
+                                        ForEach(ExternalApp.allCases.filter { $0.isInstalled }, id: \.self) { app in
+                                            Button {
+                                                app.open(at: wt.path)
+                                            } label: {
+                                                Label(app.displayName, systemImage: app.iconSystemName)
+                                            }
+                                        }
+                                    }
                                     Divider()
                                     Button("Remove from Parallel") {
                                         actions.untrack(wt.id)
