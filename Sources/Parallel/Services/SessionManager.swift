@@ -29,16 +29,23 @@ final class SessionManager {
         var readSource: DispatchSourceRead?
         var pendingSetupCommands: [String]
         let delegate: SessionTerminalDelegate
+        /// Captured at start so exit notifications don't need to re-look up
+        /// the worktree (which may have been renamed or untracked by then).
+        let worktreeDisplayName: String
+        let worktreeBranch: String
 
         init(session: Session, pty: PTY, terminalView: TerminalView,
              readSource: DispatchSourceRead?, pendingSetupCommands: [String],
-             delegate: SessionTerminalDelegate) {
+             delegate: SessionTerminalDelegate,
+             worktreeDisplayName: String, worktreeBranch: String) {
             self.session = session
             self.pty = pty
             self.terminalView = terminalView
             self.readSource = readSource
             self.pendingSetupCommands = pendingSetupCommands
             self.delegate = delegate
+            self.worktreeDisplayName = worktreeDisplayName
+            self.worktreeBranch = worktreeBranch
         }
     }
 
@@ -104,7 +111,9 @@ final class SessionManager {
             terminalView: view,
             readSource: nil,
             pendingSetupCommands: setupCommands,
-            delegate: delegate
+            delegate: delegate,
+            worktreeDisplayName: worktree.displayName,
+            worktreeBranch: worktree.branch
         )
 
         let sessionId = session.id
@@ -204,6 +213,15 @@ final class SessionManager {
         guard let e = sessionsById[sessionId] else { return }
         AppLogger.session.info("exited session=\(sessionId, privacy: .public) pid=\(e.pty.pid)")
         e.session.state = .exited(code: 0)
+
+        let tabIndex = (orderByWorktree[e.session.worktreeId] ?? [])
+            .firstIndex(of: sessionId)
+            .map { $0 + 1 } ?? 1
+        Notifications.sessionEnded(
+            worktreeName: e.worktreeDisplayName,
+            branch: e.worktreeBranch,
+            tabLabel: "shell \(tabIndex)"
+        )
     }
 
     private func flushSetupCommands(sessionId: UUID) {
