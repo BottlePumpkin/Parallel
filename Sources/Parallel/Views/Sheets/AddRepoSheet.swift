@@ -78,7 +78,11 @@ struct AddRepoSheet: View {
             if displayName.isEmpty { displayName = url.lastPathComponent }
             do {
                 discovered = try svc.list(in: url)
-                importChoices = Array(repeating: false, count: discovered.count)
+                // Default-check the main worktree (repo root itself) so a repo
+                // with no extra worktrees still gets one entry in the sidebar.
+                importChoices = discovered.map {
+                    $0.path.standardizedFileURL == url.standardizedFileURL
+                }
             } catch {
                 errorMessage = "Failed to scan worktrees: \(error.localizedDescription)"
             }
@@ -108,15 +112,15 @@ struct AddRepoSheet: View {
         let existingPaths = store.registeredPaths(for: targetRepoId)
 
         for (idx, entry) in discovered.enumerated() where importChoices[idx] {
-            // Skip the main worktree (= repo root itself) — that's the repo, not a worktree to track.
-            if entry.path.standardizedFileURL == root.standardizedFileURL { continue }
             // Skip if already imported.
             if existingPaths.contains(entry.path.standardizedFileURL) { continue }
+            let isMain = entry.path.standardizedFileURL == root.standardizedFileURL
+            let dn = isMain ? entry.branch : entry.path.lastPathComponent
             let wt = Worktree(
                 repoId: targetRepoId,
                 path: entry.path,
                 branch: entry.branch,
-                displayName: entry.path.lastPathComponent,
+                displayName: dn,
                 setupCommands: setupLines
             )
             store.addWorktree(wt)

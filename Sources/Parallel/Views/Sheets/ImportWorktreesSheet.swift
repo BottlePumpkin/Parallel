@@ -130,10 +130,11 @@ struct ImportWorktreesSheet: View {
         let registered = store.registeredPaths(for: repo.id)
         do {
             let entries = try svc.list(in: repo.root)
-            let rootKey = repo.root.standardizedFileURL
-            candidates = entries.filter { e in
-                e.path.standardizedFileURL != rootKey
-                    && !registered.contains(e.path.standardizedFileURL)
+            // Include the main worktree (repo root) — caller may want to track
+            // it alongside additional worktrees. Only filter out anything
+            // already imported into this repo.
+            candidates = entries.filter {
+                !registered.contains($0.path.standardizedFileURL)
             }
             // Pre-select if only one candidate.
             if candidates.count == 1 {
@@ -151,12 +152,15 @@ struct ImportWorktreesSheet: View {
 
     private func commit() {
         guard let repo else { return }
+        let rootKey = repo.root.standardizedFileURL
         for entry in candidates where selected.contains(entry.path.standardizedFileURL) {
+            let isMain = entry.path.standardizedFileURL == rootKey
+            let dn = isMain ? entry.branch : entry.path.lastPathComponent
             let wt = Worktree(
                 repoId: repo.id,
                 path: entry.path,
                 branch: entry.branch,
-                displayName: entry.path.lastPathComponent,
+                displayName: dn,
                 setupCommands: repo.defaultSetupCommands
             )
             store.addWorktree(wt)
