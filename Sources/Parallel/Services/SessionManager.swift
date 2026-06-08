@@ -21,7 +21,9 @@ final class SessionManager {
     /// `SessionEntry` is a class so the delegate, pty, and view share one
     /// lifetime and we don't need a parallel retain dict. SwiftTerm's
     /// `TerminalView` holds the delegate weakly, so the strong reference
-    /// must live somewhere — here.
+    /// must live somewhere — here. `@Observable` so mutations to `label`
+    /// re-render the tab bar.
+    @Observable
     final class SessionEntry {
         let session: Session
         let pty: PTY
@@ -33,6 +35,8 @@ final class SessionManager {
         /// the worktree (which may have been renamed or untracked by then).
         let worktreeDisplayName: String
         let worktreeBranch: String
+        /// User-set tab label. nil → use "shell N" auto label. Not persisted.
+        var label: String?
 
         init(session: Session, pty: PTY, terminalView: TerminalView,
              readSource: DispatchSourceRead?, pendingSetupCommands: [String],
@@ -46,6 +50,7 @@ final class SessionManager {
             self.delegate = delegate
             self.worktreeDisplayName = worktreeDisplayName
             self.worktreeBranch = worktreeBranch
+            self.label = nil
         }
     }
 
@@ -142,6 +147,15 @@ final class SessionManager {
         }
 
         return entry
+    }
+
+    /// Rename a tab. Empty/whitespace input clears the custom label
+    /// (falling back to "shell N").
+    func renameSession(sessionId: UUID, to newLabel: String) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard let e = sessionsById[sessionId] else { return }
+        let trimmed = newLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        e.label = trimmed.isEmpty ? nil : trimmed
     }
 
     /// Mark a specific tab as the active one in its worktree.

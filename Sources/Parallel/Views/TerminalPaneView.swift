@@ -7,6 +7,9 @@ struct TerminalPaneView: View {
     @Environment(SessionManager.self) private var sessionManager
     let worktreeId: UUID?
 
+    @State private var renameTabId: UUID?
+    @State private var renameTabText: String = ""
+
     var body: some View {
         Group {
             if let id = worktreeId, let wt = store.worktree(id: id) {
@@ -37,6 +40,20 @@ struct TerminalPaneView: View {
                 }
             }
         }
+        .alert("Rename tab", isPresented: Binding(
+            get: { renameTabId != nil },
+            set: { if !$0 { renameTabId = nil } }
+        )) {
+            TextField("Tab name (empty = default)", text: $renameTabText)
+            Button("Save") {
+                if let sid = renameTabId {
+                    sessionManager.renameSession(sessionId: sid, to: renameTabText)
+                }
+                renameTabId = nil
+            }
+            .keyboardShortcut(.defaultAction)
+            Button("Cancel", role: .cancel) { renameTabId = nil }
+        }
     }
 
     // MARK: - Tab bar
@@ -46,8 +63,9 @@ struct TerminalPaneView: View {
                         active: SessionManager.SessionEntry?) -> some View {
         HStack(spacing: 4) {
             ForEach(Array(tabs.enumerated()), id: \.element.session.id) { idx, entry in
+                let label = entry.label ?? "shell \(idx + 1)"
                 tabButton(
-                    label: "shell \(idx + 1)",
+                    label: label,
                     isActive: entry.session.id == active?.session.id,
                     isDead: {
                         if case .exited = entry.session.state { return true }
@@ -60,6 +78,17 @@ struct TerminalPaneView: View {
                         sessionManager.terminate(sessionId: entry.session.id)
                     }
                 )
+                .contextMenu {
+                    Button("Rename Tab…") {
+                        renameTabText = entry.label ?? ""
+                        renameTabId = entry.session.id
+                    }
+                    if entry.label != nil {
+                        Button("Reset to Default") {
+                            sessionManager.renameSession(sessionId: entry.session.id, to: "")
+                        }
+                    }
+                }
             }
             Button {
                 _ = sessionManager.startSession(for: worktree, setupCommands: worktree.setupCommands)
