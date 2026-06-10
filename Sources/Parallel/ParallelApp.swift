@@ -33,8 +33,12 @@ struct ParallelApp: App {
                         statusWatcher = w
                         w.start()
                     }
+                    sessionManager.store = store
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                    // Detach from store first so the terminate cascade doesn't
+                    // wipe persisted tab specs we want to restore next launch.
+                    sessionManager.store = nil
                     for wt in store.worktrees {
                         sessionManager.terminate(worktreeId: wt.id)
                     }

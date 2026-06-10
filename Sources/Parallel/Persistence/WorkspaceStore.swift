@@ -6,6 +6,9 @@ final class WorkspaceStore {
     var repos: [Repo] = []
     var worktrees: [Worktree] = []
     var lastSelectedWorktreeId: UUID?
+    /// Per-worktree persisted tab strip: how many shells and what labels.
+    /// Restored by SessionManager.ensureSession on first visit after restart.
+    var tabSpecsByWorktree: [UUID: [TabSpec]] = [:]
     /// Ephemeral worktree status (not persisted). StatusWatcher populates this.
     var statuses: [UUID: WorktreeStatus] = [:]
 
@@ -26,6 +29,9 @@ final class WorkspaceStore {
         var repos: [Repo]
         var worktrees: [Worktree]
         var lastSelectedWorktreeId: UUID?
+        /// String-keyed because JSON dict keys must be strings.
+        /// Backward-compatible: nil when loading old workspace.json.
+        var tabSpecsByWorktree: [String: [TabSpec]]?
     }
 
     private var fileURL: URL { directory.appendingPathComponent(fileName) }
@@ -39,6 +45,12 @@ final class WorkspaceStore {
             self.repos = payload.repos
             self.worktrees = payload.worktrees
             self.lastSelectedWorktreeId = payload.lastSelectedWorktreeId
+            self.tabSpecsByWorktree = Dictionary(
+                uniqueKeysWithValues: (payload.tabSpecsByWorktree ?? [:])
+                    .compactMap { (key, value) in
+                        UUID(uuidString: key).map { ($0, value) }
+                    }
+            )
             let merged = dedupe()
             if merged { try? save() }
         } catch {
@@ -113,8 +125,12 @@ final class WorkspaceStore {
 
     func save() throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let tabSpecsJSON = Dictionary(uniqueKeysWithValues:
+            tabSpecsByWorktree.map { ($0.key.uuidString, $0.value) }
+        )
         let payload = Payload(version: 1, repos: repos, worktrees: worktrees,
-                              lastSelectedWorktreeId: lastSelectedWorktreeId)
+                              lastSelectedWorktreeId: lastSelectedWorktreeId,
+                              tabSpecsByWorktree: tabSpecsJSON.isEmpty ? nil : tabSpecsJSON)
         let data = try JSONEncoder.iso.encode(payload)
         try data.write(to: fileURL, options: .atomic)
     }
@@ -134,14 +150,51 @@ final class WorkspaceStore {
     func removeWorktree(id: UUID) {
         AppLogger.store.info("removeWorktree id=\(id, privacy: .public)")
         worktrees.removeAll { $0.id == id }
+        tabSpecsByWorktree.removeValue(forKey: id)
         if lastSelectedWorktreeId == id { lastSelectedWorktreeId = nil }
         try? save()
     }
 
     func removeRepo(id: UUID) {
         AppLogger.store.info("removeRepo id=\(id, privacy: .public)")
+        let goneWorktreeIds = worktrees.filter { $0.repoId == id }.map(\.id)
         worktrees.removeAll { $0.repoId == id }
+        for wid in goneWorktreeIds { tabSpecsByWorktree.removeValue(forKey: wid) }
         repos.removeAll { $0.id == id }
+        try? save()
+    }
+
+    // MARK: - Tab spec mutations (called by SessionManager)
+
+    func tabSpecs(for worktreeId: UUID) -> [TabSpec] {
+        tabSpecsByWorktree[worktreeId] ?? []
+    }
+
+    func appendTabSpec(worktreeId: UUID, label: String? = nil) {
+        var list = tabSpecsByWorktree[worktreeId] ?? []
+        list.append(TabSpec(label: label))
+        tabSpecsByWorktree[worktreeId] = list
+        try? save()
+    }
+
+    func removeTabSpec(worktreeId: UUID, at index: Int) {
+        guard var list = tabSpecsByWorktree[worktreeId],
+              index >= 0, index < list.count else { return }
+        list.remove(at: index)
+        if list.isEmpty {
+            tabSpecsByWorktree.removeValue(forKey: worktreeId)
+        } else {
+            tabSpecsByWorktree[worktreeId] = list
+        }
+        try? save()
+    }
+
+    func updateTabSpec(worktreeId: UUID, at index: Int, label: String?) {
+        guard var list = tabSpecsByWorktree[worktreeId],
+              index >= 0, index < list.count else { return }
+        guard list[index].label != label else { return }
+        list[index].label = label
+        tabSpecsByWorktree[worktreeId] = list
         try? save()
     }
 

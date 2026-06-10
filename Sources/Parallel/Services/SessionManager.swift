@@ -18,6 +18,11 @@ final class SessionManager {
     /// worktreeId → active sessionId in its tab strip.
     private var activeByWorktree: [UUID: UUID] = [:]
 
+    /// Persistence backend for tab specs (count + label). Set by ParallelApp
+    /// after both store and sessionManager are constructed. Weak-ish (strong
+    /// here is fine since they share the app's lifetime).
+    var store: WorkspaceStore?
+
     /// `SessionEntry` is a class so the delegate, pty, and view share one
     /// lifetime and we don't need a parallel retain dict. SwiftTerm's
     /// `TerminalView` holds the delegate weakly, so the strong reference
@@ -85,17 +90,32 @@ final class SessionManager {
 
     // MARK: - Mutations
 
-    /// Return active session for the worktree, or create the first tab.
+    /// Return active session for the worktree. On first visit after restart,
+    /// rehydrate any persisted tab specs (count + labels) by forking that
+    /// many PTYs.
     @discardableResult
     func ensureSession(for worktree: Worktree, setupCommands: [String] = []) -> SessionEntry? {
         dispatchPrecondition(condition: .onQueue(.main))
         if let e = activeSession(for: worktree.id) { return e }
+
+        // Restore persisted tabs if any.
+        let specs = store?.tabSpecs(for: worktree.id) ?? []
+        if !specs.isEmpty {
+            var first: SessionEntry?
+            for spec in specs {
+                let e = startSession(for: worktree, setupCommands: setupCommands, persistSpec: false)
+                e?.label = spec.label
+                if first == nil { first = e }
+            }
+            return first
+        }
+
         return startSession(for: worktree, setupCommands: setupCommands)
     }
 
     /// Start a new tab in the worktree's strip and make it active.
     @discardableResult
-    func startSession(for worktree: Worktree, setupCommands: [String]) -> SessionEntry? {
+    func startSession(for worktree: Worktree, setupCommands: [String], persistSpec: Bool = true) -> SessionEntry? {
         dispatchPrecondition(condition: .onQueue(.main))
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         guard let pty = PTY(shell: shell, cwd: worktree.path) else {
@@ -140,6 +160,10 @@ final class SessionManager {
         orderByWorktree[worktree.id, default: []].append(sessionId)
         activeByWorktree[worktree.id] = sessionId
 
+        if persistSpec {
+            store?.appendTabSpec(worktreeId: worktree.id, label: nil)
+        }
+
         if !setupCommands.isEmpty {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.flushSetupCommands(sessionId: sessionId)
@@ -156,6 +180,10 @@ final class SessionManager {
         guard let e = sessionsById[sessionId] else { return }
         let trimmed = newLabel.trimmingCharacters(in: .whitespacesAndNewlines)
         e.label = trimmed.isEmpty ? nil : trimmed
+        let wid = e.session.worktreeId
+        if let idx = orderByWorktree[wid]?.firstIndex(of: sessionId) {
+            store?.updateTabSpec(worktreeId: wid, at: idx, label: e.label)
+        }
     }
 
     /// Mark a specific tab as the active one in its worktree.
@@ -178,7 +206,9 @@ final class SessionManager {
         sessionsById.removeValue(forKey: sessionId)
 
         var order = orderByWorktree[worktreeId] ?? []
+        var removedIndex: Int?
         if let idx = order.firstIndex(of: sessionId) {
+            removedIndex = idx
             order.remove(at: idx)
             if activeByWorktree[worktreeId] == sessionId {
                 if order.isEmpty {
@@ -193,6 +223,9 @@ final class SessionManager {
             orderByWorktree.removeValue(forKey: worktreeId)
         } else {
             orderByWorktree[worktreeId] = order
+        }
+        if let idx = removedIndex {
+            store?.removeTabSpec(worktreeId: worktreeId, at: idx)
         }
     }
 
