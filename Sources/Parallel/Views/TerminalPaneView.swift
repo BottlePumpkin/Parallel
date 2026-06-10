@@ -143,13 +143,17 @@ struct TerminalPaneView: View {
     // MARK: - Terminal stack
 
     /// Continuously-mounted ZStack of every running session's NSView.
-    /// Only the currently-active session has opacity 1 and accepts input.
+    /// Visibility is toggled via NSView.isHidden so the hidden views don't
+    /// receive mouse events (SwiftUI's opacity / allowsHitTesting alone
+    /// doesn't reach the underlying NSView, which left drag-selection
+    /// getting captured by an invisible terminal on top).
     private func activeStack(currentSessionId: UUID) -> some View {
         ZStack {
             ForEach(sessionManager.allRunningSessions, id: \.session.id) { entry in
-                MountedTerminalView(terminalView: entry.terminalView)
-                    .opacity(entry.session.id == currentSessionId ? 1 : 0)
-                    .allowsHitTesting(entry.session.id == currentSessionId)
+                MountedTerminalView(
+                    terminalView: entry.terminalView,
+                    isVisible: entry.session.id == currentSessionId
+                )
             }
         }
     }
@@ -206,12 +210,18 @@ struct TerminalPaneView: View {
     }
 }
 
-/// Wraps a single SwiftTerm NSView. Mounts the exact instance passed in;
-/// updateNSView is a no-op because the wrapped view is owned by SessionManager
-/// and must outlive any SwiftUI view tree changes.
+/// Wraps a single SwiftTerm NSView. Mounts the exact instance passed in
+/// and toggles `isHidden` based on `isVisible` — hides at the AppKit
+/// level so inactive tabs don't grab mouse events.
 private struct MountedTerminalView: NSViewRepresentable {
     let terminalView: TerminalView
+    let isVisible: Bool
 
-    func makeNSView(context: Context) -> TerminalView { terminalView }
-    func updateNSView(_ nsView: TerminalView, context: Context) {}
+    func makeNSView(context: Context) -> TerminalView {
+        terminalView.isHidden = !isVisible
+        return terminalView
+    }
+    func updateNSView(_ nsView: TerminalView, context: Context) {
+        nsView.isHidden = !isVisible
+    }
 }
