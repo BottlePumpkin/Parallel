@@ -180,6 +180,10 @@ struct NewWorktreeSheet: View {
 
     private func commit() {
         guard let repo = selectedRepo else { return }
+        guard svc.isGitRepo(at: repo.root) else {
+            errorMessage = "‘\(repo.displayName)’ isn't a git repository — its folder is missing a .git. Remove it from Parallel (right-click in the sidebar) and add a real repo."
+            return
+        }
         let raw = repo.root.appendingPathComponent(repo.worktreeBaseDir)
             .appendingPathComponent(sanitizedName)
         let path = uniquePath(base: raw)

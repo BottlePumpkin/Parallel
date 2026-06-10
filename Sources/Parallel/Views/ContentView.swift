@@ -21,6 +21,7 @@ struct ContentView: View {
     @State private var renameTargetId: UUID?
     @State private var renameText: String = ""
     @State private var deleteErrorMessage: String?
+    @State private var pendingRemoveRepoId: UUID?
 
     var body: some View {
         NavigationSplitView {
@@ -42,6 +43,9 @@ struct ContentView: View {
             renameTargetId: $renameTargetId,
             renameText: $renameText,
             deleteErrorMessage: $deleteErrorMessage,
+            pendingRemoveRepoId: $pendingRemoveRepoId,
+            sessionManager: sessionManager,
+            onConfirmRemoveRepo: confirmRemoveRepo,
             store: store,
             onConfirmRename: confirmRename
         ))
@@ -90,7 +94,8 @@ struct ContentView: View {
             rename: { id in
                 renameText = store.worktree(id: id)?.displayName ?? ""
                 renameTargetId = id
-            }
+            },
+            removeRepo: { id in pendingRemoveRepoId = id }
         )
     }
 
@@ -118,6 +123,17 @@ struct ContentView: View {
         defer { renameTargetId = nil }
         guard let id = renameTargetId else { return }
         store.rename(worktreeId: id, to: renameText)
+    }
+
+    private func confirmRemoveRepo() {
+        defer { pendingRemoveRepoId = nil }
+        guard let id = pendingRemoveRepoId else { return }
+        // Terminate every PTY belonging to a worktree of this repo, then
+        // remove the repo + its worktrees from the store. No git actions.
+        for wt in store.worktrees where wt.repoId == id {
+            sessionManager.terminate(worktreeId: wt.id)
+        }
+        store.removeRepo(id: id)
     }
 
     private func confirmDelete(alsoDeleteBranch: Bool) {
@@ -189,6 +205,9 @@ private struct AlertsModifier: ViewModifier {
     @Binding var renameTargetId: UUID?
     @Binding var renameText: String
     @Binding var deleteErrorMessage: String?
+    @Binding var pendingRemoveRepoId: UUID?
+    let sessionManager: SessionManager
+    let onConfirmRemoveRepo: () -> Void
     let store: WorkspaceStore
     let onConfirmRename: () -> Void
 
@@ -214,6 +233,17 @@ private struct AlertsModifier: ViewModifier {
                 Button("OK") {}
             } message: {
                 Text(deleteErrorMessage ?? "")
+            }
+            .alert("Remove repository?", isPresented: Binding(
+                get: { pendingRemoveRepoId != nil },
+                set: { if !$0 { pendingRemoveRepoId = nil } }
+            )) {
+                Button("Remove", role: .destructive) { onConfirmRemoveRepo() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                if let id = pendingRemoveRepoId, let repo = store.repos.first(where: { $0.id == id }) {
+                    Text("‘\(repo.displayName)’ and its tracked worktrees will be removed from Parallel. Nothing on disk or in git is changed.")
+                }
             }
     }
 }

@@ -33,6 +33,17 @@ final class WorktreeService {
         return Self.parseList(r.stdout)
     }
 
+    /// True when `path` is inside a git working tree. Used by sheets to gate
+    /// repo registration and worktree creation with a friendly error before
+    /// surfacing raw git diagnostics.
+    func isGitRepo(at path: URL) -> Bool {
+        guard let r = try? GitCLI.run(["rev-parse", "--is-inside-work-tree"], in: path) else {
+            return false
+        }
+        return r.exitCode == 0
+            && r.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "true"
+    }
+
     /// Parser for `git worktree list --porcelain`.
     /// Each block separated by a blank line. Recognized lines:
     /// - `worktree <path>`

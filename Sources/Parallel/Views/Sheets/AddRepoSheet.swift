@@ -61,7 +61,7 @@ struct AddRepoSheet: View {
                 Button("Cancel") { dismiss() }
                 Button("Add") { commit() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(selectedRoot == nil || displayName.isEmpty)
+                    .disabled(selectedRoot == nil || displayName.isEmpty || errorMessage != nil)
             }
         }
         .padding(20)
@@ -73,19 +73,25 @@ struct AddRepoSheet: View {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK, let url = panel.url {
-            selectedRoot = url
-            if displayName.isEmpty { displayName = url.lastPathComponent }
-            do {
-                discovered = try svc.list(in: url)
-                // Default-check the main worktree (repo root itself) so a repo
-                // with no extra worktrees still gets one entry in the sidebar.
-                importChoices = discovered.map {
-                    $0.path.standardizedFileURL == url.standardizedFileURL
-                }
-            } catch {
-                errorMessage = "Failed to scan worktrees: \(error.localizedDescription)"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        selectedRoot = url
+        if displayName.isEmpty { displayName = url.lastPathComponent }
+        discovered = []
+        importChoices = []
+        guard svc.isGitRepo(at: url) else {
+            errorMessage = "Not a git repository: \(url.path)\nRun `git init` in the folder first or pick a different one."
+            return
+        }
+        errorMessage = nil
+        do {
+            discovered = try svc.list(in: url)
+            // Default-check the main worktree (repo root itself) so a repo
+            // with no extra worktrees still gets one entry in the sidebar.
+            importChoices = discovered.map {
+                $0.path.standardizedFileURL == url.standardizedFileURL
             }
+        } catch {
+            errorMessage = "Failed to scan worktrees: \(error.localizedDescription)"
         }
     }
 

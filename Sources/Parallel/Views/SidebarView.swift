@@ -6,6 +6,7 @@ struct SidebarActions {
     var addWorktree: (UUID) -> Void
     var importWorktrees: (UUID) -> Void
     var rename: (UUID) -> Void
+    var removeRepo: (UUID) -> Void
 }
 
 struct SidebarView: View {
@@ -64,6 +65,11 @@ struct SidebarView: View {
                         .menuIndicator(.hidden)
                         .fixedSize()
                         .help("Add worktree to \(repo.displayName)")
+                    }
+                    .contextMenu {
+                        Button("Remove Repository from Parallel", role: .destructive) {
+                            actions.removeRepo(repo.id)
+                        }
                     }
                 }
             }
