@@ -226,6 +226,12 @@ final class WorkspaceStore {
         try? save()
     }
 
+    /// Reorder repo groups in the sidebar.
+    func moveRepos(from offsets: IndexSet, to destination: Int) {
+        repos.move(fromOffsets: offsets, toOffset: destination)
+        try? save()
+    }
+
     /// Reorder worktrees belonging to `repoId`. Indices are in the section's
     /// filtered view (as ForEach.onMove passes them); they're translated into
     /// the full `worktrees` array here so other repos' ordering is preserved.

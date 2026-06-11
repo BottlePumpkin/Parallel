@@ -73,6 +73,9 @@ struct SidebarView: View {
                     }
                 }
             }
+            .onMove { offsets, destination in
+                store.moveRepos(from: offsets, to: destination)
+            }
             if store.repos.isEmpty {
                 Text("(no repositories)")
                     .foregroundStyle(.secondary)
