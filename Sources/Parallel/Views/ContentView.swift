@@ -13,6 +13,7 @@ private struct NewWorktreeTrigger: Identifiable {
 struct ContentView: View {
     @Environment(WorkspaceStore.self) private var store
     @Environment(SessionManager.self) private var sessionManager
+    @Environment(CaffeinateManager.self) private var caffeinate
     @State private var selectedWorktreeId: UUID?
     @State private var showAddRepo = false
     @State private var newWorktreeTrigger: NewWorktreeTrigger?
@@ -75,6 +76,20 @@ struct ContentView: View {
                 Label("New Worktree", systemImage: "plus.square.on.square")
             }
             .disabled(store.repos.isEmpty)
+        }
+        ToolbarItem {
+            Button {
+                caffeinate.toggle()
+            } label: {
+                Label(
+                    caffeinate.isOn ? "Keep awake (ON)" : "Keep awake",
+                    systemImage: caffeinate.isOn ? "cup.and.saucer.fill" : "cup.and.saucer"
+                )
+            }
+            .foregroundStyle(caffeinate.isOn ? Color.accentColor : .primary)
+            .help(caffeinate.isOn
+                  ? "Sleep prevention ON — click to disable"
+                  : "Prevent the display and system from sleeping while you work")
         }
     }
 
