@@ -19,17 +19,34 @@ Lightweight macOS app for managing git worktrees with per-worktree PTY shells. C
 - **Nerd Font auto-detection** — MesloLGS, JetBrains Mono, Hack, FiraCode, D2Coding, Menlo fallback chain
 - All git work goes through `git` CLI — **works with git enterprise / GHE / Bitbucket / etc.**
 
-## Run
+## Install
+
+### Easiest: download the .app
+
+1. Grab the latest `Parallel-X.Y.Z-mac.zip` from [Releases](https://github.com/BottlePumpkin/Parallel/releases).
+2. Unzip → drag `Parallel.app` to `/Applications`.
+3. First launch: macOS will say "unidentified developer" — right-click `Parallel.app` → **Open** → Open. (Builds aren't notarized; one-time bypass.)
+
+Requires **macOS 14+** (Sonoma).
+
+### Build from source
 
 Requires Xcode 16+ / Swift 5.10+, macOS 14+.
 
 ```bash
-git clone https://github.com/<you>/Parallel.git
+git clone https://github.com/BottlePumpkin/Parallel.git
 cd Parallel
 swift run Parallel
 ```
 
 Or open `Package.swift` in Xcode and ⌘R.
+
+To package your own `.app`:
+
+```bash
+./scripts/build-app.sh 0.1.0
+# → build/Parallel.app  and  build/Parallel-0.1.0-mac.zip
+```
 
 ### Optional: Install a Nerd Font
 
