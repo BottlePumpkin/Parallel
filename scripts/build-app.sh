@@ -57,8 +57,18 @@ cat > "$APP_DIR/Contents/Info.plist" <<EOF
 </plist>
 EOF
 
+# Ad-hoc sign so macOS doesn't refuse to launch with "the app is damaged".
+# Not a Developer ID signature — users still see "unidentified developer"
+# the first time and need right-click → Open. But this avoids the harsher
+# Gatekeeper rejection that happens when the .app has no signature at all.
+echo "==> codesign (ad-hoc)"
+codesign --force --deep --sign - "$APP_DIR"
+
 ZIP_NAME="$APP_NAME-$VERSION-mac.zip"
-( cd "$OUT_DIR" && zip -r -q "$ZIP_NAME" "$APP_NAME.app" )
+# `ditto` preserves extended attributes and codesign metadata; plain `zip`
+# strips them on some macOS versions which re-triggers the damaged-app
+# error.
+( cd "$OUT_DIR" && ditto -c -k --keepParent "$APP_NAME.app" "$ZIP_NAME" )
 
 echo
 echo "==> Built:"
