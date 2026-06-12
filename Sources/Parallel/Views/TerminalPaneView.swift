@@ -213,6 +213,12 @@ struct TerminalPaneView: View {
 /// Wraps a single SwiftTerm NSView. Mounts the exact instance passed in
 /// and toggles `isHidden` based on `isVisible` — hides at the AppKit
 /// level so inactive tabs don't grab mouse events.
+///
+/// When a hidden view becomes visible again we resync its frame with the
+/// current superview bounds and ask AppKit for a layout + display pass.
+/// SwiftTerm caches its grid size from `setFrameSize`, and the cached value
+/// gets out of date while the view is hidden — leading to stale scrollback
+/// and occasional blank panes after worktree/tab switches.
 private struct MountedTerminalView: NSViewRepresentable {
     let terminalView: TerminalView
     let isVisible: Bool
@@ -222,6 +228,16 @@ private struct MountedTerminalView: NSViewRepresentable {
         return terminalView
     }
     func updateNSView(_ nsView: TerminalView, context: Context) {
+        let becameVisible = nsView.isHidden && isVisible
         nsView.isHidden = !isVisible
+        guard becameVisible else { return }
+        if let parent = nsView.superview {
+            let target = parent.bounds
+            if target.size.width > 1, target.size.height > 1, nsView.frame != target {
+                nsView.frame = target
+            }
+        }
+        nsView.needsLayout = true
+        nsView.needsDisplay = true
     }
 }
