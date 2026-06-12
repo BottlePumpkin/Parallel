@@ -37,6 +37,13 @@ mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 
 cp "$BIN_PATH" "$APP_DIR/Contents/MacOS/$APP_NAME"
 
+ICON_PLIST=""
+if [ -f "assets/AppIcon.icns" ]; then
+    cp "assets/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
+    ICON_PLIST="    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>"
+fi
+
 cat > "$APP_DIR/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -68,6 +75,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<EOF
     <true/>
     <key>NSSupportsSuddenTermination</key>
     <true/>
+$ICON_PLIST
 </dict>
 </plist>
 EOF
