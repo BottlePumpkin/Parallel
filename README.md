@@ -56,6 +56,37 @@ To package your own `.app`:
 # → build/Parallel.app  and  build/Parallel-0.1.0-mac.zip
 ```
 
+### Notarized release (Apple Developer required)
+
+One-time setup:
+
+1. Apple Developer Program membership ([$99/year](https://developer.apple.com/programs/)).
+2. Create a **Developer ID Application** certificate via Xcode → Settings → Accounts → "Manage Certificates" → `+`.
+3. Generate an **app-specific password** at [appleid.apple.com](https://appleid.apple.com) → "Sign-In and Security" → "App-Specific Passwords".
+4. Store the credential once in your keychain:
+
+   ```bash
+   xcrun notarytool store-credentials parallel-notary \
+       --apple-id you@example.com \
+       --team-id YOUR_TEAM_ID \
+       --password XXXX-XXXX-XXXX-XXXX
+   ```
+
+5. Export the build env in `~/.zshrc` (or invoke ad-hoc per build):
+
+   ```bash
+   export SIGN_IDENTITY="Developer ID Application: Your Name (YOUR_TEAM_ID)"
+   export NOTARY_PROFILE="parallel-notary"
+   ```
+
+Then every release is one command:
+
+```bash
+./scripts/build-app.sh 0.2.0
+```
+
+It signs with hardened runtime, submits to Apple, waits for notarization (1-5 min), staples the ticket onto the `.app`, and re-zips. Users double-click to launch on any Mac — no warnings.
+
 ### Optional: Install a Nerd Font
 
 For nice prompts (powerlevel10k, starship) install a Nerd Font once; Parallel will pick it up automatically.
