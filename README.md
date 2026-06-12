@@ -21,11 +21,19 @@ Lightweight macOS app for managing git worktrees with per-worktree PTY shells. C
 
 ## Install
 
-### Easiest: download the .app
+### Easiest: one line
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/BottlePumpkin/Parallel/master/scripts/install.sh | bash
+```
+
+Downloads the latest release, strips the quarantine attribute, drops `Parallel.app` into `/Applications`. Double-click to launch — no Gatekeeper warning.
+
+### Manual
 
 1. Grab the latest `Parallel-X.Y.Z-mac.zip` from [Releases](https://github.com/BottlePumpkin/Parallel/releases).
 2. Unzip → drag `Parallel.app` to `/Applications`.
-3. First launch: macOS will say "unidentified developer" — right-click `Parallel.app` → **Open** → Open. (Builds aren't notarized; one-time bypass.)
+3. First launch: right-click `Parallel.app` → **Open** → Open (builds aren't notarized; one-time bypass).
 
 Requires **macOS 14+** (Sonoma).
 
