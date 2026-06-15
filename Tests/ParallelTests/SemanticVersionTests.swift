@@ -55,4 +55,28 @@ final class SemanticVersionTests: XCTestCase {
     func test_compare_missing_trailing_zero_pads_for_compare() {
         XCTAssertEqual(SemanticVersion("1.2")!, SemanticVersion("1.2.0")!)
     }
+
+    func test_rejects_double_dot() {
+        XCTAssertNil(SemanticVersion("1..2"))
+    }
+
+    func test_rejects_trailing_dot() {
+        XCTAssertNil(SemanticVersion("1.2."))
+    }
+
+    func test_rejects_leading_dot() {
+        XCTAssertNil(SemanticVersion(".1.2"))
+    }
+
+    func test_hashable_equal_values_hash_equal() {
+        var seen: Set<SemanticVersion> = []
+        seen.insert(SemanticVersion("1.2")!)
+        seen.insert(SemanticVersion("1.2.0")!)
+        XCTAssertEqual(seen.count, 1)
+    }
+
+    func test_hashable_different_values_hash_different() {
+        let s: Set<SemanticVersion> = [SemanticVersion("1.2")!, SemanticVersion("1.2.1")!]
+        XCTAssertEqual(s.count, 2)
+    }
 }
