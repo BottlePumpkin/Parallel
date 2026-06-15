@@ -126,6 +126,12 @@ final class SessionManager {
 
         let view = TerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 500))
         view.font = Self.preferredTerminalFont
+        // SwiftTerm's default scrollback is 500 lines and Buffer.resize
+        // trims oldest rows whenever the grid shrinks. ZStack frame changes
+        // during worktree / tab switches were silently truncating the
+        // scrollback. 10 000 lines gives plenty of headroom (~1.6 MB per
+        // session at 80 cols) so trims never reach existing history.
+        view.getTerminal().changeScrollback(10_000)
         let delegate = SessionTerminalDelegate(pty: pty)
         view.terminalDelegate = delegate
 
