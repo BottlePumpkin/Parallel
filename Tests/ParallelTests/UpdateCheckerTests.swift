@@ -4,22 +4,25 @@ import XCTest
 @MainActor
 final class UpdateCheckerTests: XCTestCase {
 
+    private var suiteName: String!
     private var defaults: UserDefaults!
     private var session: URLSession!
 
     override func setUp() {
         super.setUp()
-        defaults = UserDefaults(suiteName: "test.parallel.\(UUID().uuidString)")!
+        suiteName = "test.parallel.\(UUID().uuidString)"
+        defaults = UserDefaults(suiteName: suiteName)!
         session = StubURLProtocol.session()
         StubURLProtocol.reset()
     }
 
     override func tearDown() {
         StubURLProtocol.reset()
-        if let name = defaults.dictionaryRepresentation().keys.first {
-            UserDefaults().removePersistentDomain(forName: name)
-        }
+        UserDefaults().removePersistentDomain(forName: suiteName)
         super.tearDown()
+        suiteName = nil
+        defaults = nil
+        session = nil
     }
 
     private func payload(tag: String, body: String = "release body") -> Data {
