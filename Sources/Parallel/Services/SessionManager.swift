@@ -11,6 +11,12 @@ import AppKit
 @Observable
 final class SessionManager {
 
+    /// Max bytes fed to a terminal per main-thread hop. Caps how long one
+    /// feed can run so a burst (e.g. an iOS build) is processed across
+    /// several runloop turns instead of freezing one frame. 256 KB ≈ a few ms
+    /// of parse work, and at 60 Hz drains ~15 MB/s — well above any build log.
+    static let feedBytesPerHop = 256 * 1024
+
     /// sessionId → entry. The single source of truth for live sessions.
     private var sessionsById: [UUID: SessionEntry] = [:]
     /// worktreeId → ordered list of sessionIds (tab order).
@@ -152,16 +158,21 @@ final class SessionManager {
         // megabytes that would otherwise flood the main queue with one
         // `feed` block per read chunk, saturating the main thread and
         // beachballing the app. Accumulate on the background pump and drain
-        // once per scheduled main-thread hop, feeding the parser in bulk.
+        // on the main thread, capped per hop so one giant burst can't
+        // monopolise a single frame — leftover reschedules itself.
         let coalescer = PTYOutputCoalescer()
+        func scheduleFeed() {
+            DispatchQueue.main.async {
+                let r = coalescer.drain(max: Self.feedBytesPerHop)
+                if !r.bytes.isEmpty {
+                    view.feed(byteArray: ArraySlice(r.bytes))
+                }
+                if r.hasMore { scheduleFeed() }
+            }
+        }
         entry.readSource = pty.startReading(
             onData: { data in
-                guard coalescer.append(data) else { return }
-                DispatchQueue.main.async {
-                    let bytes = coalescer.drain()
-                    guard !bytes.isEmpty else { return }
-                    view.feed(byteArray: ArraySlice(bytes))
-                }
+                if coalescer.append(data) { scheduleFeed() }
             },
             onEOF: { [weak self] in
                 DispatchQueue.main.async {
