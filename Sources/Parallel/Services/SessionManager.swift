@@ -148,10 +148,18 @@ final class SessionManager {
         )
 
         let sessionId = session.id
+        // Coalesce PTY output: high-throughput producers (iOS builds) emit
+        // megabytes that would otherwise flood the main queue with one
+        // `feed` block per read chunk, saturating the main thread and
+        // beachballing the app. Accumulate on the background pump and drain
+        // once per scheduled main-thread hop, feeding the parser in bulk.
+        let coalescer = PTYOutputCoalescer()
         entry.readSource = pty.startReading(
             onData: { data in
+                guard coalescer.append(data) else { return }
                 DispatchQueue.main.async {
-                    let bytes = [UInt8](data)
+                    let bytes = coalescer.drain()
+                    guard !bytes.isEmpty else { return }
                     view.feed(byteArray: ArraySlice(bytes))
                 }
             },
