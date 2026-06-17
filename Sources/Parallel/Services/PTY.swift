@@ -14,6 +14,7 @@ final class PTY {
     let masterFD: Int32
     private var readSource: DispatchSourceRead?
     private var terminated = false
+    private var readPaused = false
 
     /// - Parameters:
     ///   - shell: absolute path to the shell binary (e.g. `/bin/zsh`).
@@ -63,6 +64,9 @@ final class PTY {
     }
 
     deinit {
+        // A suspended dispatch source must be resumed before it is released,
+        // or the runtime traps. Balance any outstanding pause first.
+        if readPaused { readSource?.resume(); readPaused = false }
         readSource?.cancel()
         close(masterFD)
     }
@@ -121,6 +125,23 @@ final class PTY {
         return source
     }
 
+    /// Suspend the read source. Output keeps accumulating in the kernel pipe;
+    /// once the pipe fills the child blocks on `write()` — natural flow
+    /// control. Idempotent: a second call while paused is a no-op so the
+    /// dispatch source's suspend count stays balanced.
+    func pauseReading() {
+        guard let source = readSource, !readPaused else { return }
+        readPaused = true
+        source.suspend()
+    }
+
+    /// Resume a paused read source. Idempotent: a no-op when not paused.
+    func resumeReading() {
+        guard let source = readSource, readPaused else { return }
+        readPaused = false
+        source.resume()
+    }
+
     /// Send SIGTERM. If the child is still alive after 2 seconds, send SIGKILL —
     /// but only after confirming via `waitpid(WNOHANG)` that the original child
     /// has not exited (which would have allowed the OS to recycle the pid).
@@ -128,6 +149,7 @@ final class PTY {
     func terminate() {
         if terminated { return }
         terminated = true
+        if readPaused { resumeReading() }
         kill(pid, SIGTERM)
         DispatchQueue.global().asyncAfter(deadline: .now() + 2) { [pid] in
             var status: Int32 = 0
