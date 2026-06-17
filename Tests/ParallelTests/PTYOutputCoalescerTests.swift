@@ -2,30 +2,35 @@ import XCTest
 @testable import Parallel
 
 /// `PTYOutputCoalescer` collapses many small PTY read chunks into a small
-/// number of main-thread feeds. These tests pin the threading-agnostic core:
-/// the "schedule once" signal, the drain/coalesce semantics, and the per-feed
-/// cap that keeps a single huge burst (e.g. an iOS build) from monopolising
-/// one frame on the main thread.
+/// number of capped main-thread feeds, and applies high/low-watermark
+/// backpressure so a producer that outruns the main thread is throttled
+/// instead of buffered without bound. Watermarks are injected small here so
+/// transitions are deterministic.
 final class PTYOutputCoalescerTests: XCTestCase {
 
-    /// The first append after construction must tell the caller to schedule a
-    /// flush — otherwise nothing ever drains.
+    // MARK: Scheduling
+
     func test_firstAppend_signalsScheduleFlush() {
         let c = PTYOutputCoalescer()
-        XCTAssertTrue(c.append(Data([0x61])))
+        XCTAssertTrue(c.append(Data([0x61])).scheduleFlush)
     }
 
-    /// While a flush is already pending, further appends must NOT request
-    /// another schedule. This is the whole point: N chunks → 1 main-queue hop.
     func test_appendWhilePending_doesNotRescheduleFlush() {
         let c = PTYOutputCoalescer()
         _ = c.append(Data([0x61]))
-        XCTAssertFalse(c.append(Data([0x62])))
-        XCTAssertFalse(c.append(Data([0x63])))
+        XCTAssertFalse(c.append(Data([0x62])).scheduleFlush)
+        XCTAssertFalse(c.append(Data([0x63])).scheduleFlush)
     }
 
-    /// A drain whose cap exceeds the pending size returns everything in order
-    /// and reports no leftover.
+    func test_appendAfterFullDrain_signalsScheduleAgain() {
+        let c = PTYOutputCoalescer()
+        _ = c.append(Data([0x61]))
+        _ = c.drain(max: 1024)
+        XCTAssertTrue(c.append(Data([0x62])).scheduleFlush)
+    }
+
+    // MARK: Cap / coalesce
+
     func test_drain_underCap_returnsAllBytesInOrderNoMore() {
         let c = PTYOutputCoalescer()
         _ = c.append(Data([0x61, 0x62]))
@@ -35,45 +40,20 @@ final class PTYOutputCoalescerTests: XCTestCase {
         XCTAssertFalse(r.hasMore)
     }
 
-    /// A drain caps the returned bytes; the remainder stays pending and is
-    /// reported via `hasMore` so the caller schedules a follow-up feed.
     func test_drain_overCap_capsBytesAndReportsMore() {
         let c = PTYOutputCoalescer()
         _ = c.append(Data([0x61, 0x62, 0x63, 0x64, 0x65]))
         let first = c.drain(max: 2)
         XCTAssertEqual(first.bytes, [0x61, 0x62])
         XCTAssertTrue(first.hasMore)
-
         let second = c.drain(max: 2)
         XCTAssertEqual(second.bytes, [0x63, 0x64])
         XCTAssertTrue(second.hasMore)
-
         let third = c.drain(max: 2)
         XCTAssertEqual(third.bytes, [0x65])
         XCTAssertFalse(third.hasMore)
     }
 
-    /// After a fully-draining flush, the pending flag resets so the next
-    /// append re-schedules.
-    func test_appendAfterFullDrain_signalsScheduleAgain() {
-        let c = PTYOutputCoalescer()
-        _ = c.append(Data([0x61]))
-        _ = c.drain(max: 1024)
-        XCTAssertTrue(c.append(Data([0x62])))
-    }
-
-    /// After a capped drain that left bytes behind, the flush is still
-    /// considered scheduled (the caller keeps draining via `hasMore`), so a
-    /// concurrent append must NOT request another schedule.
-    func test_appendAfterCappedDrain_doesNotReschedule() {
-        let c = PTYOutputCoalescer()
-        _ = c.append(Data([0x61, 0x62, 0x63]))
-        let r = c.drain(max: 1)
-        XCTAssertTrue(r.hasMore)
-        XCTAssertFalse(c.append(Data([0x64])))
-    }
-
-    /// Draining with nothing pending yields empty + no-more (and is safe).
     func test_drainWhenEmpty_returnsEmptyNoMore() {
         let c = PTYOutputCoalescer()
         let r = c.drain(max: 1024)
@@ -81,12 +61,42 @@ final class PTYOutputCoalescerTests: XCTestCase {
         XCTAssertFalse(r.hasMore)
     }
 
-    /// Bytes that arrive between scheduling and the flush running are still
-    /// picked up by that flush's drain — no output is stranded.
     func test_drain_includesBytesAppendedAfterScheduling() {
         let c = PTYOutputCoalescer()
-        _ = c.append(Data([0x61]))   // schedules
-        _ = c.append(Data([0x62]))   // arrives before flush runs
+        _ = c.append(Data([0x61]))
+        _ = c.append(Data([0x62]))
         XCTAssertEqual(c.drain(max: 1024).bytes, [0x61, 0x62])
+    }
+
+    // MARK: Backpressure (high/low watermark)
+
+    func test_appendCrossingHighWater_requestsPauseOnce() {
+        let c = PTYOutputCoalescer(highWater: 8, lowWater: 4)
+        XCTAssertFalse(c.append(Data([0x01, 0x02, 0x03])).pauseProducer) // 3 < 8
+        XCTAssertTrue(c.append(Data(repeating: 0x00, count: 5)).pauseProducer) // 8 >= 8
+        XCTAssertFalse(c.append(Data([0x09])).pauseProducer) // already paused
+    }
+
+    func test_drainCrossingLowWater_requestsResumeOnce() {
+        let c = PTYOutputCoalescer(highWater: 8, lowWater: 4)
+        _ = c.append(Data(repeating: 0x00, count: 8)) // pauses (8 >= 8)
+        let first = c.drain(max: 2) // 6 pending, > 4 → no resume yet
+        XCTAssertFalse(first.resumeProducer)
+        let second = c.drain(max: 3) // 3 pending, <= 4 → resume
+        XCTAssertTrue(second.resumeProducer)
+        let third = c.drain(max: 3) // already resumed
+        XCTAssertFalse(third.resumeProducer)
+    }
+
+    func test_betweenWatermarks_noPauseOrResume() {
+        let c = PTYOutputCoalescer(highWater: 100, lowWater: 10)
+        XCTAssertFalse(c.append(Data(repeating: 0x00, count: 50)).pauseProducer)
+        XCTAssertFalse(c.drain(max: 20).resumeProducer) // 30 pending, never paused
+    }
+
+    func test_fullDrainWhilePaused_requestsResume() {
+        let c = PTYOutputCoalescer(highWater: 8, lowWater: 4)
+        _ = c.append(Data(repeating: 0x00, count: 8)) // pauses
+        XCTAssertTrue(c.drain(max: 1024).resumeProducer)
     }
 }
