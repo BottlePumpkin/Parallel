@@ -126,8 +126,11 @@ final class PTY {
                 }
             }
         }
-        source.resume()
+        // Publish the source before resuming so an early pause (from the very
+        // first event handler firing) can never observe a nil `readSource` and
+        // silently skip its suspend().
         readSource = source
+        source.resume()
         return source
     }
 
