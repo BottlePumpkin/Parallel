@@ -42,11 +42,14 @@ struct UpdateAvailableSheet: View {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(installCommand, forType: .string)
                         copied = true
-                        Task {
-                            try? await Task.sleep(nanoseconds: 1_800_000_000)
-                            await MainActor.run { copied = false }
-                        }
                     }
+                }
+            }
+            .task(id: copied) {
+                guard copied else { return }
+                try? await Task.sleep(nanoseconds: 1_800_000_000)
+                if !Task.isCancelled {
+                    copied = false
                 }
             }
 
