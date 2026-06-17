@@ -167,12 +167,18 @@ final class SessionManager {
                 if !r.bytes.isEmpty {
                     view.feed(byteArray: ArraySlice(r.bytes))
                 }
+                // Buffer drained back to the low watermark — let the producer run.
+                if r.resumeProducer { pty.resumeReading() }
                 if r.hasMore { scheduleFeed() }
             }
         }
         entry.readSource = pty.startReading(
             onData: { data in
-                if coalescer.append(data) { scheduleFeed() }
+                let outcome = coalescer.append(data)
+                // Buffer hit the high watermark — stop reading so the build
+                // blocks on its pipe instead of growing our memory unbounded.
+                if outcome.pauseProducer { pty.pauseReading() }
+                if outcome.scheduleFlush { scheduleFeed() }
             },
             onEOF: { [weak self] in
                 DispatchQueue.main.async {
