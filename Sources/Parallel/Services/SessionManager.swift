@@ -161,24 +161,26 @@ final class SessionManager {
         // on the main thread, capped per hop so one giant burst can't
         // monopolise a single frame — leftover reschedules itself.
         let coalescer = PTYOutputCoalescer()
+        // Backpressure: the coalescer suspends/resumes the PTY read source
+        // itself, atomically with its watermark transitions, so a build that
+        // outruns the main thread blocks on its pipe instead of growing our
+        // buffer unbounded. weak to avoid a readSource → coalescer → pty cycle.
+        coalescer.setBackpressureHandlers(
+            onPause: { [weak pty] in pty?.pauseReading() },
+            onResume: { [weak pty] in pty?.resumeReading() }
+        )
         func scheduleFeed() {
             DispatchQueue.main.async {
                 let r = coalescer.drain(max: Self.feedBytesPerHop)
                 if !r.bytes.isEmpty {
                     view.feed(byteArray: ArraySlice(r.bytes))
                 }
-                // Buffer drained back to the low watermark — let the producer run.
-                if r.resumeProducer { pty.resumeReading() }
                 if r.hasMore { scheduleFeed() }
             }
         }
         entry.readSource = pty.startReading(
             onData: { data in
-                let outcome = coalescer.append(data)
-                // Buffer hit the high watermark — stop reading so the build
-                // blocks on its pipe instead of growing our memory unbounded.
-                if outcome.pauseProducer { pty.pauseReading() }
-                if outcome.scheduleFlush { scheduleFeed() }
+                if coalescer.append(data) { scheduleFeed() }
             },
             onEOF: { [weak self] in
                 DispatchQueue.main.async {

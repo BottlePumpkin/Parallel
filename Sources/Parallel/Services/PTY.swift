@@ -14,6 +14,12 @@ final class PTY {
     let masterFD: Int32
     private var readSource: DispatchSourceRead?
     private var terminated = false
+    /// Guards `readPaused` and the paired suspend/resume. `pauseReading` runs on
+    /// the background read queue, `resumeReading` on the main thread, and
+    /// `terminate`/`deinit` on whatever thread tears the session down — so the
+    /// check-and-flip must be atomic, and a suspended source must never be
+    /// released without first resuming it.
+    private let pauseLock = NSLock()
     private var readPaused = false
 
     /// - Parameters:
@@ -65,8 +71,8 @@ final class PTY {
 
     deinit {
         // A suspended dispatch source must be resumed before it is released,
-        // or the runtime traps. Balance any outstanding pause first.
-        if readPaused { readSource?.resume(); readPaused = false }
+        // or the runtime traps. resumeReading() is locked + idempotent.
+        resumeReading()
         readSource?.cancel()
         close(masterFD)
     }
@@ -127,16 +133,20 @@ final class PTY {
 
     /// Suspend the read source. Output keeps accumulating in the kernel pipe;
     /// once the pipe fills the child blocks on `write()` — natural flow
-    /// control. Idempotent: a second call while paused is a no-op so the
-    /// dispatch source's suspend count stays balanced.
+    /// control. Locked + idempotent: a second call while paused is a no-op so
+    /// the dispatch source's suspend count stays balanced across threads.
     func pauseReading() {
+        pauseLock.lock()
+        defer { pauseLock.unlock() }
         guard let source = readSource, !readPaused else { return }
         readPaused = true
         source.suspend()
     }
 
-    /// Resume a paused read source. Idempotent: a no-op when not paused.
+    /// Resume a paused read source. Locked + idempotent: a no-op when not paused.
     func resumeReading() {
+        pauseLock.lock()
+        defer { pauseLock.unlock() }
         guard let source = readSource, readPaused else { return }
         readPaused = false
         source.resume()
@@ -149,7 +159,8 @@ final class PTY {
     func terminate() {
         if terminated { return }
         terminated = true
-        if readPaused { resumeReading() }
+        // Balance any outstanding pause before the source is later cancelled.
+        resumeReading()
         kill(pid, SIGTERM)
         DispatchQueue.global().asyncAfter(deadline: .now() + 2) { [pid] in
             var status: Int32 = 0

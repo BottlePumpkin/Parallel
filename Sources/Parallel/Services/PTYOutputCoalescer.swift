@@ -12,24 +12,23 @@ import Foundation
 /// schedule at most ONE main-thread drain collapses N hops into 1 and lets the
 /// terminal parser consume bytes in bulk.
 ///
+/// Backpressure: when `pending` crosses the high watermark the `onPause`
+/// handler is invoked to stop reading the PTY (so the child blocks on its pipe
+/// write — Unix flow control); when it drains back to the low watermark
+/// `onResume` is invoked. The handlers are called *inside the lock*, at the
+/// same instant the paused state flips, so the decision and its application to
+/// the PTY can never be reordered relative to each other across threads. The
+/// handlers must therefore be cheap and non-blocking (DispatchSource
+/// suspend/resume qualify) and MUST NOT call back into the coalescer.
+///
 /// Thread-safe: `append` is called from the background read pump, `drain` from
-/// the main thread. A lock guards the small critical sections.
+/// the main thread. A lock guards every access to mutable state.
 final class PTYOutputCoalescer {
-    /// Result of an `append`. `scheduleFlush` asks the caller to schedule one
-    /// main-thread drain; `pauseProducer` fires once when `pending` first
-    /// crosses the high watermark, asking the caller to stop reading the PTY.
-    struct AppendOutcome: Equatable {
-        let scheduleFlush: Bool
-        let pauseProducer: Bool
-    }
-
     /// Result of a `drain`. `hasMore` is true when the per-feed cap left bytes
-    /// behind; `resumeProducer` fires once when `pending` falls back to the low
-    /// watermark, asking the caller to resume reading the PTY.
+    /// behind, so the caller reschedules until the buffer is empty.
     struct DrainResult: Equatable {
         let bytes: [UInt8]
         let hasMore: Bool
-        let resumeProducer: Bool
     }
 
     private let highWater: Int
@@ -38,17 +37,34 @@ final class PTYOutputCoalescer {
     private var pending: [UInt8] = []
     private var flushScheduled = false
     private var producerPaused = false
+    private var onPause: (() -> Void)?
+    private var onResume: (() -> Void)?
 
     /// - Parameters:
     ///   - highWater: pause reading once `pending` reaches this many bytes.
     ///   - lowWater: resume reading once `pending` drops to this many bytes.
+    ///     Must be strictly less than `highWater` so the hysteresis band is
+    ///     non-empty and pause/resume can't thrash.
     init(highWater: Int = 4 * 1024 * 1024, lowWater: Int = 1 * 1024 * 1024) {
+        precondition(highWater > lowWater, "highWater must exceed lowWater")
         self.highWater = highWater
         self.lowWater = lowWater
     }
 
+    /// Install the backpressure handlers. Call once, before reading starts.
+    func setBackpressureHandlers(onPause: @escaping () -> Void,
+                                 onResume: @escaping () -> Void) {
+        lock.lock()
+        defer { lock.unlock() }
+        self.onPause = onPause
+        self.onResume = onResume
+    }
+
     /// Append bytes from the background read pump.
-    func append(_ data: Data) -> AppendOutcome {
+    /// - Returns: `true` if the caller should schedule a main-thread drain
+    ///   (i.e. no flush is already pending).
+    @discardableResult
+    func append(_ data: Data) -> Bool {
         lock.lock()
         defer { lock.unlock() }
         pending.append(contentsOf: data)
@@ -61,33 +77,33 @@ final class PTYOutputCoalescer {
             scheduleFlush = true
         }
 
-        var pauseProducer = false
         if !producerPaused && pending.count >= highWater {
             producerPaused = true
-            pauseProducer = true
+            onPause?()
         }
 
-        return AppendOutcome(scheduleFlush: scheduleFlush, pauseProducer: pauseProducer)
+        return scheduleFlush
     }
 
-    /// Drain up to `max` bytes. Keeps the scheduled flag set while bytes remain
-    /// (so the caller reschedules), and signals resume when `pending` falls to
-    /// the low watermark. Call on the main thread inside the scheduled flush.
+    /// Drain up to `max` bytes (must be > 0). Keeps the scheduled flag set while
+    /// bytes remain (so the caller reschedules), and invokes `onResume` when
+    /// `pending` falls to the low watermark. Call on the main thread inside the
+    /// scheduled flush.
     func drain(max: Int) -> DrainResult {
+        precondition(max > 0, "drain cap must be positive")
         lock.lock()
         defer { lock.unlock() }
-        let n = Swift.min(Swift.max(max, 0), pending.count)
+        let n = Swift.min(max, pending.count)
         let out = Array(pending[0..<n])
         pending.removeFirst(n)
         let more = !pending.isEmpty
         flushScheduled = more
 
-        var resumeProducer = false
         if producerPaused && pending.count <= lowWater {
             producerPaused = false
-            resumeProducer = true
+            onResume?()
         }
 
-        return DrainResult(bytes: out, hasMore: more, resumeProducer: resumeProducer)
+        return DrainResult(bytes: out, hasMore: more)
     }
 }

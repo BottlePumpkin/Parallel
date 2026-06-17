@@ -2,31 +2,44 @@ import XCTest
 @testable import Parallel
 
 /// `PTYOutputCoalescer` collapses many small PTY read chunks into a small
-/// number of capped main-thread feeds, and applies high/low-watermark
-/// backpressure so a producer that outruns the main thread is throttled
-/// instead of buffered without bound. Watermarks are injected small here so
-/// transitions are deterministic.
+/// number of capped feeds, and applies high/low-watermark backpressure by
+/// invoking pause/resume handlers *inside its lock* at the moment the buffer
+/// crosses a watermark — so the decision and its application can never be
+/// reordered across threads. Watermarks are injected small here so transitions
+/// are deterministic.
 final class PTYOutputCoalescerTests: XCTestCase {
+
+    /// Records pause/resume callbacks for assertions.
+    private final class Spy {
+        var pauses = 0
+        var resumes = 0
+        func attach(to c: PTYOutputCoalescer) {
+            c.setBackpressureHandlers(
+                onPause: { self.pauses += 1 },
+                onResume: { self.resumes += 1 }
+            )
+        }
+    }
 
     // MARK: Scheduling
 
     func test_firstAppend_signalsScheduleFlush() {
         let c = PTYOutputCoalescer()
-        XCTAssertTrue(c.append(Data([0x61])).scheduleFlush)
+        XCTAssertTrue(c.append(Data([0x61])))
     }
 
     func test_appendWhilePending_doesNotRescheduleFlush() {
         let c = PTYOutputCoalescer()
         _ = c.append(Data([0x61]))
-        XCTAssertFalse(c.append(Data([0x62])).scheduleFlush)
-        XCTAssertFalse(c.append(Data([0x63])).scheduleFlush)
+        XCTAssertFalse(c.append(Data([0x62])))
+        XCTAssertFalse(c.append(Data([0x63])))
     }
 
     func test_appendAfterFullDrain_signalsScheduleAgain() {
         let c = PTYOutputCoalescer()
         _ = c.append(Data([0x61]))
         _ = c.drain(max: 1024)
-        XCTAssertTrue(c.append(Data([0x62])).scheduleFlush)
+        XCTAssertTrue(c.append(Data([0x62])))
     }
 
     // MARK: Cap / coalesce
@@ -70,33 +83,58 @@ final class PTYOutputCoalescerTests: XCTestCase {
 
     // MARK: Backpressure (high/low watermark)
 
-    func test_appendCrossingHighWater_requestsPauseOnce() {
+    func test_appendCrossingHighWater_pausesOnce() {
         let c = PTYOutputCoalescer(highWater: 8, lowWater: 4)
-        XCTAssertFalse(c.append(Data([0x01, 0x02, 0x03])).pauseProducer) // 3 < 8
-        XCTAssertTrue(c.append(Data(repeating: 0x00, count: 5)).pauseProducer) // 8 >= 8
-        XCTAssertFalse(c.append(Data([0x09])).pauseProducer) // already paused
+        let spy = Spy(); spy.attach(to: c)
+        _ = c.append(Data([0x01, 0x02, 0x03])) // 3 < 8
+        XCTAssertEqual(spy.pauses, 0)
+        _ = c.append(Data(repeating: 0x00, count: 5)) // 8 >= 8 → pause
+        XCTAssertEqual(spy.pauses, 1)
+        _ = c.append(Data([0x09])) // already paused → no second pause
+        XCTAssertEqual(spy.pauses, 1)
     }
 
-    func test_drainCrossingLowWater_requestsResumeOnce() {
+    func test_drainCrossingLowWater_resumesOnce() {
         let c = PTYOutputCoalescer(highWater: 8, lowWater: 4)
+        let spy = Spy(); spy.attach(to: c)
         _ = c.append(Data(repeating: 0x00, count: 8)) // pauses (8 >= 8)
-        let first = c.drain(max: 2) // 6 pending, > 4 → no resume yet
-        XCTAssertFalse(first.resumeProducer)
-        let second = c.drain(max: 3) // 3 pending, <= 4 → resume
-        XCTAssertTrue(second.resumeProducer)
-        let third = c.drain(max: 3) // already resumed
-        XCTAssertFalse(third.resumeProducer)
+        _ = c.drain(max: 2) // 6 pending, > 4 → no resume yet
+        XCTAssertEqual(spy.resumes, 0)
+        _ = c.drain(max: 3) // 3 pending, <= 4 → resume
+        XCTAssertEqual(spy.resumes, 1)
+        _ = c.drain(max: 3) // already resumed
+        XCTAssertEqual(spy.resumes, 1)
     }
 
     func test_betweenWatermarks_noPauseOrResume() {
         let c = PTYOutputCoalescer(highWater: 100, lowWater: 10)
-        XCTAssertFalse(c.append(Data(repeating: 0x00, count: 50)).pauseProducer)
-        XCTAssertFalse(c.drain(max: 20).resumeProducer) // 30 pending, never paused
+        let spy = Spy(); spy.attach(to: c)
+        _ = c.append(Data(repeating: 0x00, count: 50)) // 50 < 100
+        _ = c.drain(max: 20) // 30 pending, never paused
+        XCTAssertEqual(spy.pauses, 0)
+        XCTAssertEqual(spy.resumes, 0)
     }
 
-    func test_fullDrainWhilePaused_requestsResume() {
+    func test_fullDrainWhilePaused_resumes() {
         let c = PTYOutputCoalescer(highWater: 8, lowWater: 4)
+        let spy = Spy(); spy.attach(to: c)
         _ = c.append(Data(repeating: 0x00, count: 8)) // pauses
-        XCTAssertTrue(c.drain(max: 1024).resumeProducer)
+        _ = c.drain(max: 1024) // fully drained, 0 <= 4 → resume
+        XCTAssertEqual(spy.resumes, 1)
+    }
+
+    /// The drain chain keeps reporting `hasMore` while the producer is paused,
+    /// guaranteeing the buffer can always drain back to the resume threshold.
+    func test_pausedBufferStillDrainsViaHasMore() {
+        let c = PTYOutputCoalescer(highWater: 8, lowWater: 4)
+        let spy = Spy(); spy.attach(to: c)
+        _ = c.append(Data(repeating: 0x00, count: 10)) // pauses, 10 pending
+        let first = c.drain(max: 2)  // 8 pending
+        XCTAssertTrue(first.hasMore)
+        XCTAssertEqual(spy.resumes, 0)
+        let second = c.drain(max: 2) // 6 pending
+        XCTAssertTrue(second.hasMore)
+        _ = c.drain(max: 3)  // 3 pending <= 4 → resume
+        XCTAssertEqual(spy.resumes, 1)
     }
 }
