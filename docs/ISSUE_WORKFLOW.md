@@ -37,3 +37,50 @@ Classify the issue so Phase 2 takes the right path:
 3. **Before opening the PR** — Claude reports a diff summary and `swift test` results;
    the human approves, then `gh pr create` runs. Opening a PR is outward-facing, so it
    never happens without this approval.
+
+## Appendix
+
+### Command cheat sheet
+
+```bash
+# 0. Read the issue
+gh issue view N
+
+# 3. Work in a per-issue worktree (branch issue-N under .claude/worktrees/)
+git worktree add .claude/worktrees/issue-N -b issue-N
+swift test                       # must pass before delivery
+
+# 4. Open the PR (after the human approves)
+gh pr create --title "fix: <summary>" --body "<what changed and why>
+
+Closes #N"
+
+# Optional: leave a status note on the issue
+gh issue comment N --body "<note>"
+```
+
+> `gh` is authed to **github.com** for this repo (the company GHE auth is a separate
+> host). If `gh` targets the wrong host, run `gh auth switch --hostname github.com`.
+
+### Commit / PR conventions
+
+- Conventional Commits, matching the repo: `fix(views): …`, `feat(services): …`,
+  `docs: …`, `test: …`.
+- The PR body (or a commit) includes `Closes #N` so the issue auto-closes on merge.
+
+### Worked example — issue #2
+
+Issue [#2 단축키 제안](https://github.com/BottlePumpkin/Parallel/issues/2): make
+Ctrl+Tab switch shell tabs.
+
+- **Phase 0 — Triage:** single concern, keyboard handling lives in
+  `Sources/Parallel/Views/`, no new architecture → **trivial → fast-path**.
+- **Phase 1 — Root-cause:** no Ctrl+Tab handler is wired to the tab strip.
+- **Phase 3 — Implement & Test:** add the shortcut in `Sources/Parallel/Views/`
+  (next-tab on Ctrl+Tab, previous-tab on Ctrl+Shift+Tab), with a test covering the
+  next/previous index math; `swift test` passes.
+- **Phase 4 — Deliver:** commit `fix(views): switch shell tabs with Ctrl+Tab`,
+  PR body `Closes #2`, merge.
+
+> This is illustrative. The real #2 fix is produced by running this runbook, not by
+> reading this example.
