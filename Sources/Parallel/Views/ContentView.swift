@@ -338,12 +338,19 @@ private struct ManualCheckSheet: View {
                 Text("Couldn’t check for updates.").font(.headline)
                 Text(msg).font(.caption).foregroundStyle(.secondary)
             }
-            HStack {
-                Spacer()
-                Button("OK") { dismiss() }.keyboardShortcut(.defaultAction)
+            if !isChecking {
+                HStack {
+                    Spacer()
+                    Button("OK") { dismiss() }.keyboardShortcut(.defaultAction)
+                }
             }
         }
         .padding(20)
         .frame(width: 360)
+    }
+
+    private var isChecking: Bool {
+        if case .checking = state { return true }
+        return false
     }
 }
