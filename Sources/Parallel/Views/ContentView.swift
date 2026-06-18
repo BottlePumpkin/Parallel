@@ -14,6 +14,7 @@ struct ContentView: View {
     @Environment(WorkspaceStore.self) private var store
     @Environment(SessionManager.self) private var sessionManager
     @Environment(CaffeinateManager.self) private var caffeinate
+    @Environment(UpdateChecker.self) private var updateChecker
     @State private var selectedWorktreeId: UUID?
     @State private var showAddRepo = false
     @State private var newWorktreeTrigger: NewWorktreeTrigger?
@@ -23,6 +24,21 @@ struct ContentView: View {
     @State private var renameText: String = ""
     @State private var deleteErrorMessage: String?
     @State private var pendingRemoveRepoId: UUID?
+    @State private var manualCheckSheet: ManualCheckState?
+    @State private var showReportIssueSheet = false
+
+    enum ManualCheckState: Identifiable {
+        case checking
+        case upToDate(SemanticVersion)
+        case failed(String)
+        var id: String {
+            switch self {
+            case .checking: return "checking"
+            case .upToDate(let v): return "upToDate-\(v.description)"
+            case .failed(let m): return "failed-\(m)"
+            }
+        }
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -38,7 +54,10 @@ struct ContentView: View {
             importWorktreesRepoId: $importWorktreesRepoId,
             pendingDeleteId: $pendingDeleteId,
             store: store,
-            onConfirmDelete: confirmDelete
+            onConfirmDelete: confirmDelete,
+            manualCheckSheet: $manualCheckSheet,
+            showReportIssueSheet: $showReportIssueSheet,
+            updateChecker: updateChecker
         ))
         .modifier(AlertsModifier(
             renameTargetId: $renameTargetId,
@@ -51,6 +70,9 @@ struct ContentView: View {
             onConfirmRename: confirmRename
         ))
         .focusedValue(\.contentActions, focusedActions)
+        .task(id: "update-startup-check") {
+            await updateChecker.checkIfStale()
+        }
         .onAppear {
             if selectedWorktreeId == nil {
                 selectedWorktreeId = store.lastSelectedWorktreeId
@@ -130,7 +152,9 @@ struct ContentView: View {
             },
             deleteCurrentWorktree: {
                 pendingDeleteId = selectedWorktreeId
-            }
+            },
+            checkForUpdates: { Task { await runManualCheck() } },
+            reportIssue: { showReportIssueSheet = true }
         )
     }
 
@@ -183,6 +207,22 @@ struct ContentView: View {
         }
         store.removeWorktree(id: id)
     }
+
+    private func runManualCheck() async {
+        manualCheckSheet = .checking
+        await updateChecker.check(force: true)
+        switch updateChecker.lastCheckResult {
+        case .available:
+            manualCheckSheet = nil
+            // updateChecker.updateAvailable is set; the sheet binding picks it up.
+        case .upToDate(let current):
+            manualCheckSheet = .upToDate(current)
+        case .failed(let error):
+            manualCheckSheet = .failed(error.localizedDescription)
+        case .none:
+            manualCheckSheet = .failed("No result.")
+        }
+    }
 }
 
 // MARK: - Modifiers (extracted to keep ContentView.body type-checkable)
@@ -194,6 +234,9 @@ private struct SheetsModifier: ViewModifier {
     @Binding var pendingDeleteId: UUID?
     let store: WorkspaceStore
     let onConfirmDelete: (Bool) -> Void
+    @Binding var manualCheckSheet: ContentView.ManualCheckState?
+    @Binding var showReportIssueSheet: Bool
+    let updateChecker: UpdateChecker
 
     func body(content: Content) -> some View {
         content
@@ -212,6 +255,18 @@ private struct SheetsModifier: ViewModifier {
                 set: { if $0 == nil { pendingDeleteId = nil } }
             )) { wt in
                 DeleteWorktreeSheet(worktree: wt, onConfirm: onConfirmDelete)
+            }
+            .sheet(item: Binding(
+                get: { updateChecker.updateAvailable.map(UpdateInfoBox.init) },
+                set: { _ in updateChecker.updateAvailable = nil }
+            )) { box in
+                UpdateAvailableSheet(info: box.info)
+            }
+            .sheet(item: $manualCheckSheet) { state in
+                ManualCheckSheet(state: state)
+            }
+            .sheet(isPresented: $showReportIssueSheet) {
+                ReportIssueSheet()
             }
     }
 }
@@ -257,8 +312,38 @@ private struct AlertsModifier: ViewModifier {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 if let id = pendingRemoveRepoId, let repo = store.repos.first(where: { $0.id == id }) {
-                    Text("‘\(repo.displayName)’ and its tracked worktrees will be removed from Parallel. Nothing on disk or in git is changed.")
+                    Text("’\(repo.displayName)’ and its tracked worktrees will be removed from Parallel. Nothing on disk or in git is changed.")
                 }
             }
+    }
+}
+
+private struct UpdateInfoBox: Identifiable {
+    let info: UpdateInfo
+    var id: String { info.latestTag }
+}
+
+private struct ManualCheckSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let state: ContentView.ManualCheckState
+
+    var body: some View {
+        VStack(spacing: 14) {
+            switch state {
+            case .checking:
+                ProgressView("Checking GitHub…")
+            case .upToDate(let v):
+                Text("You’re on the latest version (\(v.description)).")
+            case .failed(let msg):
+                Text("Couldn’t check for updates.").font(.headline)
+                Text(msg).font(.caption).foregroundStyle(.secondary)
+            }
+            HStack {
+                Spacer()
+                Button("OK") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 360)
     }
 }
