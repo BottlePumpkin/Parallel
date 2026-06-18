@@ -13,9 +13,14 @@ Lightweight macOS app for managing git worktrees with per-worktree PTY shells. C
 - **Multiple tabs per worktree**, each independent shell — rename with right-click
 - **`+ New Worktree`** with branch dropdown (Recent · Local · Remotes), path preview, optional setup commands auto-typed (`fvm flutter pub get` …)
 - **`+ Import Existing`** with searchable picker for repos that already have worktrees
-- **Status polling** via `git status --porcelain` every 5s (paused when window inactive)
+- **Status polling** via `git status --porcelain` every 5s (paused when window inactive), bounded by an `OperationQueue` so polling can't explode threads
 - **Right-click menu**: Rename, Open in Finder / Cursor / VS Code / Android Studio / IntelliJ / Xcode, Remove from Parallel, Delete Worktree (with optional `git branch -D`)
 - **Notifications** when a shell exits (so you know background `claude` is done)
+- **Keep awake** toolbar toggle — prevents display dimming + idle sleep via native `IOPMAssertion` while a long background run finishes (released automatically on quit)
+- **Check for Updates** — polls GitHub Releases, with Skip-this-version / Later / Open, release notes inline (`Parallel ▸ Check for Updates…`)
+- **Report Issue** — opens a prefilled GitHub new-issue with app version, macOS, architecture, and log path baked in (`Parallel ▸ Report Issue…`)
+- **10k-line scrollback** per terminal, preserved across worktree / tab switches
+- **Backpressure-aware PTY** — output is coalesced to one main-thread feed per cycle with high/low-watermark pause/resume, so a noisy build can't freeze the UI
 - **Nerd Font auto-detection** — MesloLGS, JetBrains Mono, Hack, FiraCode, D2Coding, Menlo fallback chain
 - All git work goes through `git` CLI — **works with git enterprise / GHE / Bitbucket / etc.**
 
@@ -138,7 +143,13 @@ Debug builds also mirror stderr / stdout to `~/Library/Logs/Parallel/parallel-<t
 swift test
 ```
 
-34 unit tests cover the pure-logic surface: `PathSanitizer`, `WorkspaceStore` (Codable round-trip, dedupe migration, corruption quarantine), `GitCLI` (large-output pipe drain), `WorktreeService` (porcelain parser, add / remove / status / branches), `PTY` (fork + read + terminate smoke test against `/bin/sh`).
+85 unit tests cover the pure-logic surface:
+
+- `PathSanitizer`, `WorkspaceStore` (Codable round-trip, dedupe migration, corruption quarantine)
+- `GitCLI` (large-output pipe drain), `WorktreeService` (porcelain parser, add / remove / status / branches)
+- `PTY` (fork + read + terminate smoke test against `/bin/sh`), `PTYOutputCoalescer` + backpressure integration (watermark pause/resume)
+- `SemanticVersion` (comparable tag parser), `AppVersion` / `IssueReporter` (issue-template signature + new-issue URL)
+- `UpdateChecker` (GitHub Releases polling, cache + skip state) via a `URLProtocol` stub
 
 Views and `SessionManager` are verified manually.
 
