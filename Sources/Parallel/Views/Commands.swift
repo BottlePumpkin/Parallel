@@ -24,6 +24,11 @@ struct ParallelCommands: Commands {
             Button("Delete Worktree…") { actions?.deleteCurrentWorktree() }
                 .keyboardShortcut(.delete, modifiers: .command)
         }
+        CommandGroup(after: .appInfo) {
+            Button("Check for Updates…") { actions?.checkForUpdates() }
+            Divider()
+            Button("Report Issue…") { actions?.reportIssue() }
+        }
     }
 }
 
@@ -35,6 +40,8 @@ struct ContentActions {
     var selectIndex: (Int) -> Void = { _ in }
     var closeCurrentSession: () -> Void = {}
     var deleteCurrentWorktree: () -> Void = {}
+    var checkForUpdates: () -> Void = {}
+    var reportIssue: () -> Void = {}
 }
 
 private struct ContentActionsKey: FocusedValueKey {
