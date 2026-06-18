@@ -70,7 +70,7 @@ Append exactly this content to `docs/ISSUE_WORKFLOW.md`:
 
 ## Triage rubric (Phase 0)
 
-Classify the issue so Phase 2 takes the right path:
+Classify the issue so the correct Phase 2 branch (2a or 2b) is taken:
 
 - **Trivial → fast-path (2a):** single or few files, behavior is unambiguous, no new
   abstraction or architectural change, low regression risk. Examples: add a keyboard
@@ -83,7 +83,7 @@ Classify the issue so Phase 2 takes the right path:
 
 1. **After Triage** — approve the classification (trivial/complex) and the one-line
    approach before any code is written.
-2. **(complex only) Spec & Plan** — approve the spec, then approve the plan.
+2. **(complex only) Spec & Plan** — two approval steps: approve the spec first, then approve the plan.
 3. **Before opening the PR** — Claude reports a diff summary and `swift test` results;
    the human approves, then `gh pr create` runs. Opening a PR is outward-facing, so it
    never happens without this approval.
@@ -127,9 +127,12 @@ git worktree add .claude/worktrees/issue-N -b issue-N
 swift test                       # must pass before delivery
 
 # 4. Open the PR (after the human approves)
-gh pr create --title "fix: <summary>" --body "<what changed and why>
+gh pr create --title "fix: <summary>" --body "$(cat <<'EOF'
+<what changed and why>
 
-Closes #N"
+Closes #N
+EOF
+)"
 
 # Optional: leave a status note on the issue
 gh issue comment N --body "<note>"
@@ -152,6 +155,7 @@ Ctrl+Tab switch shell tabs.
 - **Phase 0 — Triage:** single concern, keyboard handling lives in
   `Sources/Parallel/Views/`, no new architecture → **trivial → fast-path**.
 - **Phase 1 — Root-cause:** no Ctrl+Tab handler is wired to the tab strip.
+- **Phase 2a — Fast-path:** nothing to design; skip straight to Phase 3.
 - **Phase 3 — Implement & Test:** add the shortcut in `Sources/Parallel/Views/`
   (next-tab on Ctrl+Tab, previous-tab on Ctrl+Shift+Tab), with a test covering the
   next/previous index math; `swift test` passes.
