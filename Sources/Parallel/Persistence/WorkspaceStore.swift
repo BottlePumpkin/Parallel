@@ -202,6 +202,14 @@ final class WorkspaceStore {
         worktrees.first { $0.id == id }
     }
 
+    /// Worktrees in the order the sidebar displays them: grouped by repo (in
+    /// `repos` order), each repo's worktrees in `worktrees` array order. ⌘⌥1–9
+    /// selects by THIS visible order, not the raw `worktrees` index — the raw
+    /// array is interleaved across repos and doesn't match what the user sees.
+    var orderedWorktrees: [Worktree] {
+        repos.flatMap { repo in worktrees.filter { $0.repoId == repo.id } }
+    }
+
     /// Standardized paths of worktrees already tracked under `repoId`, for
     /// dedup checks when importing or adding worktrees.
     func registeredPaths(for repoId: UUID) -> Set<URL> {

@@ -17,6 +17,15 @@ final class SessionManager {
     /// of parse work, and at 60 Hz drains ~15 MB/s — well above any build log.
     static let feedBytesPerHop = 256 * 1024
 
+    /// Index to activate when cycling `forward` (or backward) through `count`
+    /// tabs from `current`, wrapping around. nil when there are no tabs. Pure
+    /// math, unit-tested independently of any live PTY.
+    static func adjacentTabIndex(from current: Int, count: Int, forward: Bool) -> Int? {
+        guard count > 0 else { return nil }
+        let delta = forward ? 1 : -1
+        return ((current + delta) % count + count) % count
+    }
+
     /// sessionId → entry. The single source of truth for live sessions.
     private var sessionsById: [UUID: SessionEntry] = [:]
     /// worktreeId → ordered list of sessionIds (tab order).
