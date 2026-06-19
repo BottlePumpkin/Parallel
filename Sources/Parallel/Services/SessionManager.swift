@@ -242,6 +242,7 @@ final class SessionManager {
         guard let order = orderByWorktree[worktreeId], !order.isEmpty else { return }
         let currentIdx = activeByWorktree[worktreeId].flatMap { order.firstIndex(of: $0) } ?? 0
         guard let nextIdx = Self.adjacentTabIndex(from: currentIdx, count: order.count, forward: forward) else { return }
+        guard activeByWorktree[worktreeId] != order[nextIdx] else { return }
         activeByWorktree[worktreeId] = order[nextIdx]
     }
 
@@ -249,6 +250,7 @@ final class SessionManager {
     func activateTab(in worktreeId: UUID, at index: Int) {
         dispatchPrecondition(condition: .onQueue(.main))
         guard let order = orderByWorktree[worktreeId], index >= 0, index < order.count else { return }
+        guard activeByWorktree[worktreeId] != order[index] else { return }
         activeByWorktree[worktreeId] = order[index]
     }
 
@@ -268,7 +270,7 @@ final class SessionManager {
         dispatchPrecondition(condition: .onQueue(.main))
         guard let view = activeSession(for: worktreeId)?.terminalView else { return }
         let item = NSMenuItem()
-        item.tag = Int(NSTextFinder.Action.showFindInterface.rawValue)
+        item.tag = Int(NSTextFinder.Action.showFindInterface.rawValue) // rawValue is UInt; tag is Int — safe on 64-bit macOS
         view.performTextFinderAction(item)
     }
 

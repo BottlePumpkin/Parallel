@@ -48,4 +48,19 @@ final class TerminalShortcutsTests: XCTestCase {
         // Raw index 1 was b1 (the bug); visible index 1 is now a2.
         XCTAssertEqual(store.orderedWorktrees[1].id, a2.id)
     }
+
+    func test_orderedWorktrees_empty_isEmpty() {
+        let store = WorkspaceStore(directory: URL(fileURLWithPath: NSTemporaryDirectory()))
+        XCTAssertTrue(store.orderedWorktrees.isEmpty)
+    }
+
+    func test_orderedWorktrees_repo_with_no_worktrees_contributes_nothing() {
+        let store = WorkspaceStore(directory: URL(fileURLWithPath: NSTemporaryDirectory()))
+        let repoA = Repo(root: URL(fileURLWithPath: "/tmp/a"), displayName: "A")
+        let repoB = Repo(root: URL(fileURLWithPath: "/tmp/b"), displayName: "B")
+        store.repos = [repoA, repoB]
+        let a1 = Worktree(repoId: repoA.id, path: URL(fileURLWithPath: "/tmp/a/1"), branch: "a1", displayName: "a1")
+        store.worktrees = [a1]   // repoB has no worktrees
+        XCTAssertEqual(store.orderedWorktrees.map(\.id), [a1.id])
+    }
 }
