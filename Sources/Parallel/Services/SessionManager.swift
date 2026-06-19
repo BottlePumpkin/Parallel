@@ -236,6 +236,42 @@ final class SessionManager {
         activeByWorktree[worktreeId] = sessionId
     }
 
+    /// Cycle the active tab in a worktree's strip (⌃Tab / ⌃⇧Tab).
+    func activateAdjacentTab(in worktreeId: UUID, forward: Bool) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard let order = orderByWorktree[worktreeId], !order.isEmpty else { return }
+        let currentIdx = activeByWorktree[worktreeId].flatMap { order.firstIndex(of: $0) } ?? 0
+        guard let nextIdx = Self.adjacentTabIndex(from: currentIdx, count: order.count, forward: forward) else { return }
+        activeByWorktree[worktreeId] = order[nextIdx]
+    }
+
+    /// Activate the tab at `index` (0-based) in a worktree's strip, if present (⌘1–9).
+    func activateTab(in worktreeId: UUID, at index: Int) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard let order = orderByWorktree[worktreeId], index >= 0, index < order.count else { return }
+        activeByWorktree[worktreeId] = order[index]
+    }
+
+    /// Clear the active tab's screen + scrollback (⌘K). Display-side only: the
+    /// shell is NOT sent anything, so a running program isn't disturbed. ESC[H
+    /// home, ESC[2J erase screen, ESC[3J erase scrollback.
+    func clearActiveTerminal(in worktreeId: UUID) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard let view = activeSession(for: worktreeId)?.terminalView else { return }
+        let seq: [UInt8] = Array("\u{1b}[H\u{1b}[2J\u{1b}[3J".utf8)
+        view.feed(byteArray: seq[...])
+    }
+
+    /// Show SwiftTerm's built-in find bar on the active tab (⌘F). Uses the
+    /// public performTextFinderAction entry point; showFindBar is private.
+    func showFind(in worktreeId: UUID) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard let view = activeSession(for: worktreeId)?.terminalView else { return }
+        let item = NSMenuItem()
+        item.tag = Int(NSTextFinder.Action.showFindInterface.rawValue)
+        view.performTextFinderAction(item)
+    }
+
     /// Terminate a single tab. If it was active, advance active to the
     /// next tab in the strip (or previous if it was the last).
     func terminate(sessionId: UUID) {
