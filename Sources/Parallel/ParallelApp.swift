@@ -17,6 +17,7 @@ struct ParallelApp: App {
         let dir = TestMode.supportDirectory() ?? WorkspaceStore.defaultDirectory
         let s = WorkspaceStore(directory: dir)
         try? s.load()
+        TestSeed.applyIfNeeded(to: s)
         return s
     }()
     @State private var sessionManager = SessionManager()
