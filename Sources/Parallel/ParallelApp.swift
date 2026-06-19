@@ -14,7 +14,8 @@ struct ParallelApp: App {
     }
 
     @State private var store: WorkspaceStore = {
-        let s = WorkspaceStore(directory: WorkspaceStore.defaultDirectory)
+        let dir = TestMode.supportDirectory() ?? WorkspaceStore.defaultDirectory
+        let s = WorkspaceStore(directory: dir)
         try? s.load()
         return s
     }()
