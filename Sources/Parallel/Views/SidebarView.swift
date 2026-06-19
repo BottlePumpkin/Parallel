@@ -120,6 +120,7 @@ private struct WorktreeRow: View {
                     .help("\(s.changedFiles) changed file\(s.changedFiles == 1 ? "" : "s") (git status)")
             }
         }
+        .accessibilityIdentifier("wt.\(worktree.id.uuidString)")
     }
 
     @ViewBuilder

@@ -37,6 +37,7 @@ struct NewWorktreeSheet: View {
                     Text(r.displayName).tag(UUID?.some(r.id))
                 }
             }
+            .accessibilityIdentifier("sheet.newWorktree.repo")
             .onChange(of: selectedRepoId) { _, _ in
                 prefillSetup()
                 loadBranches()
@@ -44,6 +45,7 @@ struct NewWorktreeSheet: View {
 
             HStack {
                 TextField("Branch", text: $branch)
+                    .accessibilityIdentifier("sheet.newWorktree.branch")
                     .onChange(of: branch) { _, _ in displayName = sanitizedName }
                 Toggle("New branch", isOn: $createBranch)
             }
@@ -111,6 +113,7 @@ struct NewWorktreeSheet: View {
                 Button("Create") { commit() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(selectedRepoId == nil || branch.isEmpty)
+                    .accessibilityIdentifier("sheet.newWorktree.create")
             }
         }
         .padding(20)

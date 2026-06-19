@@ -48,6 +48,11 @@ struct ContentView: View {
             TerminalPaneView(worktreeId: selectedWorktreeId)
         }
         .toolbar { toolbarContent }
+        .overlay(alignment: .topLeading) {
+            if TestMode.isE2E() {
+                E2EProbeView(selectedWorktreeId: selectedWorktreeId)
+            }
+        }
         .modifier(SheetsModifier(
             showAddRepo: $showAddRepo,
             newWorktreeTrigger: $newWorktreeTrigger,
@@ -71,7 +76,9 @@ struct ContentView: View {
         ))
         .focusedValue(\.contentActions, focusedActions)
         .task(id: "update-startup-check") {
-            await updateChecker.checkIfStale()
+            if !TestMode.isE2E() {
+                await updateChecker.checkIfStale()
+            }
         }
         .onAppear {
             if selectedWorktreeId == nil {
@@ -90,6 +97,7 @@ struct ContentView: View {
             Button { showAddRepo = true } label: {
                 Label("Add Repository", systemImage: "folder.badge.plus")
             }
+            .accessibilityIdentifier("toolbar.addRepo")
         }
         ToolbarItem {
             Button {
@@ -98,6 +106,7 @@ struct ContentView: View {
                 Label("New Worktree", systemImage: "plus.square.on.square")
             }
             .disabled(store.repos.isEmpty)
+            .accessibilityIdentifier("toolbar.newWorktree")
         }
         ToolbarItem {
             Button {

@@ -10,12 +10,16 @@ struct ParallelApp: App {
         // Force regular foreground app so .commands { ParallelCommands() } works.
         NSApplication.shared.setActivationPolicy(.regular)
         NSApplication.shared.activate(ignoringOtherApps: true)
-        Notifications.requestPermission()
+        if !TestMode.isE2E() {
+            Notifications.requestPermission()
+        }
     }
 
     @State private var store: WorkspaceStore = {
-        let s = WorkspaceStore(directory: WorkspaceStore.defaultDirectory)
+        let dir = TestMode.supportDirectory() ?? WorkspaceStore.defaultDirectory
+        let s = WorkspaceStore(directory: dir)
         try? s.load()
+        TestSeed.applyIfNeeded(to: s)
         return s
     }()
     @State private var sessionManager = SessionManager()
