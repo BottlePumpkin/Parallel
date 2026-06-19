@@ -14,12 +14,17 @@ final class WorktreeListTests: XCTestCase {
         let app = XCUIApplication()
         app.launchE2E(fixture: fx)
 
-        // The repo header renders as a PopUpButton (label: repo displayName).
-        // The worktree row primary name renders as a StaticText (value: worktree displayName).
-        XCTAssertTrue(app.popUpButtons["demo"].waitForExistence(timeout: 15),
-                      "repo section header should be visible")
-        XCTAssertTrue(app.staticTexts["feature-x"].waitForExistence(timeout: 10),
+        // Worktree row is the load-bearing assertion (proves the seed rendered).
+        XCTAssertTrue(app.staticTexts["feature-x"].waitForExistence(timeout: 15),
                       "seeded worktree row should be visible")
+
+        // Repo section header: its AX element type varies across Xcode versions
+        // (a popUpButton locally, a different type in CI), so match by label
+        // across any element type rather than pinning to one query.
+        let repoHeader = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", "demo")).firstMatch
+        XCTAssertTrue(repoHeader.waitForExistence(timeout: 10),
+                      "repo section header should be visible")
         app.terminate()
     }
 }
