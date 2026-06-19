@@ -17,6 +17,15 @@ final class SessionManager {
     /// of parse work, and at 60 Hz drains ~15 MB/s — well above any build log.
     static let feedBytesPerHop = 256 * 1024
 
+    /// Index to activate when cycling `forward` (or backward) through `count`
+    /// tabs from `current`, wrapping around. nil when there are no tabs. Pure
+    /// math, unit-tested independently of any live PTY.
+    static func adjacentTabIndex(from current: Int, count: Int, forward: Bool) -> Int? {
+        guard count > 0 else { return nil }
+        let delta = forward ? 1 : -1
+        return ((current + delta) % count + count) % count
+    }
+
     /// sessionId → entry. The single source of truth for live sessions.
     private var sessionsById: [UUID: SessionEntry] = [:]
     /// worktreeId → ordered list of sessionIds (tab order).
@@ -225,6 +234,44 @@ final class SessionManager {
         guard let order = orderByWorktree[worktreeId], order.contains(sessionId) else { return }
         guard activeByWorktree[worktreeId] != sessionId else { return }
         activeByWorktree[worktreeId] = sessionId
+    }
+
+    /// Cycle the active tab in a worktree's strip (⌃Tab / ⌃⇧Tab).
+    func activateAdjacentTab(in worktreeId: UUID, forward: Bool) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard let order = orderByWorktree[worktreeId], !order.isEmpty else { return }
+        let currentIdx = activeByWorktree[worktreeId].flatMap { order.firstIndex(of: $0) } ?? 0
+        guard let nextIdx = Self.adjacentTabIndex(from: currentIdx, count: order.count, forward: forward) else { return }
+        guard activeByWorktree[worktreeId] != order[nextIdx] else { return }
+        activeByWorktree[worktreeId] = order[nextIdx]
+    }
+
+    /// Activate the tab at `index` (0-based) in a worktree's strip, if present (⌘1–9).
+    func activateTab(in worktreeId: UUID, at index: Int) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard let order = orderByWorktree[worktreeId], index >= 0, index < order.count else { return }
+        guard activeByWorktree[worktreeId] != order[index] else { return }
+        activeByWorktree[worktreeId] = order[index]
+    }
+
+    /// Clear the active tab's screen + scrollback (⌘K). Display-side only: the
+    /// shell is NOT sent anything, so a running program isn't disturbed. ESC[H
+    /// home, ESC[2J erase screen, ESC[3J erase scrollback.
+    func clearActiveTerminal(in worktreeId: UUID) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard let view = activeSession(for: worktreeId)?.terminalView else { return }
+        let seq: [UInt8] = Array("\u{1b}[H\u{1b}[2J\u{1b}[3J".utf8)
+        view.feed(byteArray: seq[...])
+    }
+
+    /// Show SwiftTerm's built-in find bar on the active tab (⌘F). Uses the
+    /// public performTextFinderAction entry point; showFindBar is private.
+    func showFind(in worktreeId: UUID) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard let view = activeSession(for: worktreeId)?.terminalView else { return }
+        let item = NSMenuItem()
+        item.tag = Int(NSTextFinder.Action.showFindInterface.rawValue) // rawValue is UInt; tag is Int — safe on 64-bit macOS
+        view.performTextFinderAction(item)
     }
 
     /// Terminate a single tab. If it was active, advance active to the
