@@ -50,12 +50,33 @@ struct E2EFixture {
 
     func cleanup() { try? FileManager.default.removeItem(at: rootDir) }
 
+    /// Path to a real git binary that does not call xcrun (which is blocked in the
+    /// App Sandbox that wraps the XCUITest runner). Prefer Homebrew/CLT installations
+    /// over the /usr/bin stub, which delegates to xcrun on macOS.
+    private static let gitExecutable: String = {
+        let candidates = [
+            "/opt/homebrew/bin/git",          // Homebrew (Apple Silicon / Intel)
+            "/usr/local/bin/git",             // Homebrew (Intel legacy)
+            "/Applications/Xcode.app/Contents/Developer/usr/bin/git",  // Xcode CLT
+            "/usr/bin/git"                    // System stub – last resort
+        ]
+        return candidates.first {
+            FileManager.default.isExecutableFile(atPath: $0)
+        } ?? "/usr/bin/git"
+    }()
+
     @discardableResult
     private func git(_ args: [String], in dir: URL) throws -> String {
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        p.arguments = ["git"] + args
+        p.executableURL = URL(fileURLWithPath: E2EFixture.gitExecutable)
+        p.arguments = args
         p.currentDirectoryURL = dir
+        // Minimal environment: suppress credential helpers and system config
+        // (both can trigger xcrun inside the sandbox).
+        var env = ProcessInfo.processInfo.environment
+        env["GIT_CONFIG_NOSYSTEM"] = "1"
+        env["GIT_TERMINAL_PROMPT"] = "0"
+        p.environment = env
         let pipe = Pipe()
         p.standardOutput = pipe
         p.standardError = pipe
