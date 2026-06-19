@@ -7,34 +7,17 @@ import Foundation
 enum TestSeed {
     struct Spec: Decodable {
         struct SeedRepo: Decodable {
-            var root: String
-            var displayName: String
-
-            init(root: String, displayName: String) {
-                self.root = root
-                self.displayName = displayName
-            }
+            let root: String
+            let displayName: String
         }
         struct SeedWorktree: Decodable {
-            var repoIndex: Int
-            var path: String
-            var branch: String
-            var displayName: String
-
-            init(repoIndex: Int, path: String, branch: String, displayName: String) {
-                self.repoIndex = repoIndex
-                self.path = path
-                self.branch = branch
-                self.displayName = displayName
-            }
+            let repoIndex: Int
+            let path: String
+            let branch: String
+            let displayName: String
         }
-        var repos: [SeedRepo]
-        var worktrees: [SeedWorktree]
-
-        init(repos: [SeedRepo], worktrees: [SeedWorktree]) {
-            self.repos = repos
-            self.worktrees = worktrees
-        }
+        let repos: [SeedRepo]
+        let worktrees: [SeedWorktree]
     }
 
     /// Decode + apply the seed file named by `PARALLEL_E2E_SEED`, if present and

@@ -25,6 +25,17 @@ final class TestSeedTests: XCTestCase {
         XCTAssertEqual(store.worktrees.first?.repoId, store.repos.first?.id)
     }
 
+    func testOutOfBoundsRepoIndexIsSkipped() throws {
+        let store = try tempStore()
+        let spec = TestSeed.Spec(
+            repos: [.init(root: "/tmp/demo", displayName: "demo")],
+            worktrees: [.init(repoIndex: 99, path: "/tmp/demo/wt", branch: "main", displayName: "x")]
+        )
+        TestSeed.apply(spec, to: store)
+        XCTAssertEqual(store.repos.count, 1)
+        XCTAssertEqual(store.worktrees.count, 0)  // out-of-bounds entry dropped
+    }
+
     func testApplyIsNoOpWhenStoreNotEmpty() throws {
         let store = try tempStore()
         store.addRepo(Repo(root: URL(fileURLWithPath: "/tmp/pre"), displayName: "pre"))
