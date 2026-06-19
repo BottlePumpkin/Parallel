@@ -15,8 +15,17 @@ final class NewWorktreeTests: XCTestCase {
         // "ㅇZeatuㅓre/"). Switch the system input source to an ASCII-capable
         // layout for the duration of the test so typed text lands verbatim.
         let previousInputSource = currentInputSource()
-        XCTAssertTrue(selectASCIIKeyboard(), "an ASCII-capable keyboard layout must be available")
-        defer { if let s = previousInputSource { TISSelectInputSource(s) } }
+        // Track an input source we had to enable ourselves (one that was DISABLED
+        // on the host) so we can fully restore the host's enablement set afterward.
+        var enabledByTest: TISInputSource?
+        XCTAssertTrue(selectASCIIKeyboard(enabledSource: &enabledByTest),
+                      "an ASCII-capable keyboard layout must be available")
+        defer {
+            // Restore the originally-selected source...
+            if let s = previousInputSource { TISSelectInputSource(s) }
+            // ...and disable only a source WE enabled, never the user's own source.
+            if let enabled = enabledByTest { TISDisableInputSource(enabled) }
+        }
 
         let app = XCUIApplication()
         app.launchE2E(fixture: fx)
@@ -83,6 +92,12 @@ final class NewWorktreeTests: XCTestCase {
         XCTAssertTrue(sentinelWritten,
                       "sentinel file should be written by the live shell")
 
+        // Existence alone could be satisfied by an empty file; assert the exact
+        // token the shell echoed to make the live-PTY proof airtight.
+        let contents = (try? String(contentsOf: fx.probeFile, encoding: .utf8)) ?? ""
+        XCTAssertTrue(contents.contains("PARALLEL_READY"),
+                      "sentinel file should contain the token echoed by the live shell, got: \(contents)")
+
         app.terminate()
     }
 
@@ -124,12 +139,21 @@ final class NewWorktreeTests: XCTestCase {
 
     /// Select an ASCII-capable keyboard layout (preferring ABC / U.S.) so typed
     /// text is not composed by the host's Hangul IME. Returns false if none found.
+    /// On success, `enabledSource` is set to a source this method had to enable
+    /// (one that was previously DISABLED on the host); leave it nil otherwise so
+    /// the caller never disables a source it didn't enable.
     @discardableResult
-    private func selectASCIIKeyboard() -> Bool {
+    private func selectASCIIKeyboard(enabledSource: inout TISInputSource?) -> Bool {
         func candidates(includeAllInstalled: Bool) -> [TISInputSource] {
             guard let cf = TISCreateInputSourceList(nil, includeAllInstalled)?
                 .takeRetainedValue() else { return [] }
             return (cf as NSArray).compactMap { ($0 as! TISInputSource) }
+        }
+        // Defensive: if the enabled-state property is missing/unreadable, treat the
+        // source as already enabled so we never disable something we didn't enable.
+        func isEnabled(_ src: TISInputSource) -> Bool {
+            guard let p = TISGetInputSourceProperty(src, kTISPropertyInputSourceIsEnabled) else { return true }
+            return CFBooleanGetValue(Unmanaged<CFBoolean>.fromOpaque(p).takeUnretainedValue())
         }
         func isASCIIKeyboardLayout(_ src: TISInputSource) -> Bool {
             guard let catPtr = TISGetInputSourceProperty(src, kTISPropertyInputSourceCategory) else { return false }
@@ -146,7 +170,12 @@ final class NewWorktreeTests: XCTestCase {
             let layouts = sources.filter(isASCIIKeyboardLayout)
             let preferred = layouts.first { sourceID($0).contains("ABC") || sourceID($0).contains("keylayout.US") }
             guard let chosen = preferred ?? layouts.first else { return false }
-            TISEnableInputSource(chosen)
+            // Only enable (and record) a source that wasn't already enabled, so the
+            // defer can undo exactly our change and nothing else.
+            if !isEnabled(chosen) {
+                TISEnableInputSource(chosen)
+                enabledSource = chosen
+            }
             return TISSelectInputSource(chosen) == noErr
         }
         if trySelect(from: candidates(includeAllInstalled: false)) { return true }
