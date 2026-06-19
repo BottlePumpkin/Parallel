@@ -46,8 +46,12 @@ Classify the issue so the correct Phase 2 branch (2a or 2b) is taken:
 # 0. Read the issue
 gh issue view N
 
-# 3. Work in a per-issue worktree (branch issue-N under .claude/worktrees/)
-git worktree add .claude/worktrees/issue-N -b issue-N
+# 3. Work in a per-issue worktree. Naming is FIXED: worktree + branch = issue-N
+#    (so there's never a name to invent). The helper verifies the issue exists
+#    and creates the worktree off the latest master in one step:
+./scripts/new-issue-worktree.sh N
+#    …equivalent to:
+git worktree add .claude/worktrees/issue-N -b issue-N origin/master
 swift test                       # must pass before delivery
 
 # 4. Open the PR (after the human approves)
