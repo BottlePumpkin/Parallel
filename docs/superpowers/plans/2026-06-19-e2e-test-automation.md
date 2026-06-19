@@ -1005,8 +1005,8 @@ jobs:
       # present on the runner — Homebrew git is the reliable choice.
       - name: Ensure non-shim git
         run: brew install git
-      - name: Download Metal Toolchain
-        run: xcodebuild -downloadComponent MetalToolchain
+      - name: Download Metal Toolchain (no-op on Xcode < 16)
+        run: xcodebuild -downloadComponent MetalToolchain || true
       - name: Generate Xcode project
         run: xcodegen generate
       - name: Run UI tests
