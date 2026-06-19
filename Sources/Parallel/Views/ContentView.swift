@@ -48,6 +48,11 @@ struct ContentView: View {
             TerminalPaneView(worktreeId: selectedWorktreeId)
         }
         .toolbar { toolbarContent }
+        .overlay(alignment: .topLeading) {
+            if TestMode.isE2E() {
+                E2EProbeView(selectedWorktreeId: selectedWorktreeId)
+            }
+        }
         .modifier(SheetsModifier(
             showAddRepo: $showAddRepo,
             newWorktreeTrigger: $newWorktreeTrigger,
