@@ -999,6 +999,12 @@ jobs:
           xcode-version: latest-stable
       - name: Install xcodegen
         run: brew install xcodegen
+      # The XCUITest runner is sandboxed, so /usr/bin/git (a shim that calls the
+      # sandbox-blocked `xcrun`) fails. E2EFixture prefers a real git binary
+      # (Homebrew at /opt/homebrew/bin/git, or the Xcode CLT git). Ensure one is
+      # present on the runner — Homebrew git is the reliable choice.
+      - name: Ensure non-shim git
+        run: brew install git
       - name: Download Metal Toolchain
         run: xcodebuild -downloadComponent MetalToolchain
       - name: Generate Xcode project
