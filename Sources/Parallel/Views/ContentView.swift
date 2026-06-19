@@ -92,6 +92,7 @@ struct ContentView: View {
             Button { showAddRepo = true } label: {
                 Label("Add Repository", systemImage: "folder.badge.plus")
             }
+            .accessibilityIdentifier("toolbar.addRepo")
         }
         ToolbarItem {
             Button {
@@ -100,6 +101,7 @@ struct ContentView: View {
                 Label("New Worktree", systemImage: "plus.square.on.square")
             }
             .disabled(store.repos.isEmpty)
+            .accessibilityIdentifier("toolbar.newWorktree")
         }
         ToolbarItem {
             Button {

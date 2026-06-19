@@ -40,6 +40,7 @@ struct DeleteWorktreeSheet: View {
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
+                .accessibilityIdentifier("sheet.deleteWorktree.confirm")
             }
         }
         .padding(20)

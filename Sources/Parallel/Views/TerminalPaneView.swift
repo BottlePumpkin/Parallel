@@ -21,6 +21,7 @@ struct TerminalPaneView: View {
                     }
                     if let active, case .running = active.session.state {
                         activeStack(currentSessionId: active.session.id)
+                            .accessibilityIdentifier("terminal.pane")
                     } else if let active {
                         deadSessionPlaceholder(for: wt, sessionId: active.session.id)
                     } else {
