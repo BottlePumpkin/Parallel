@@ -144,6 +144,37 @@ final class WorktreeServiceTests: XCTestCase {
         }
     }
 
+    // MARK: - gitInit
+
+    func test_gitInit_nonGitFolder_becomesRepo() throws {
+        let svc = WorktreeService()
+        let plain = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: plain, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: plain) }
+
+        XCTAssertFalse(svc.isGitRepo(at: plain))
+        try svc.gitInit(at: plain)
+        XCTAssertTrue(svc.isGitRepo(at: plain))
+    }
+
+    func test_gitInit_freshRepo_listReturnsMainWorktree() throws {
+        // The AddRepoSheet flow relies on `list` returning the main worktree
+        // immediately after init — before any commit exists. A fresh repo emits
+        // an unborn `HEAD 000…0` line, which parseList must still accept.
+        let svc = WorktreeService()
+        let plain = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: plain, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: plain) }
+
+        try svc.gitInit(at: plain)
+        let entries = try svc.list(in: plain)
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(entries[0].branch, "main")
+        XCTAssertEqual(entries[0].path.standardizedFileURL, plain.standardizedFileURL)
+    }
+
     func test_status_countsModifiedAndStagedFiles() throws {
         // Modify the existing tracked file (a.txt) and stage it
         try "modified".write(to: repoRoot.appendingPathComponent("a.txt"),

@@ -13,6 +13,10 @@ struct AddRepoSheet: View {
     @State private var discovered: [WorktreeService.Entry] = []
     @State private var importChoices: [Bool] = []
     @State private var errorMessage: String?
+    // Set when a non-git folder is picked: offer in-app `git init` instead of
+    // hard-blocking. Cleared once the folder is (or becomes) a git repo.
+    @State private var needsInit = false
+    @State private var confirmInit = false
 
     private let svc = WorktreeService()
 
@@ -52,6 +56,26 @@ struct AddRepoSheet: View {
                 .frame(minHeight: 120, maxHeight: 200)
             }
 
+            if needsInit, let root = selectedRoot {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("This folder isn’t a git repository yet.",
+                          systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.secondary)
+                    Button("Initialize git here") { confirmInit = true }
+                        .accessibilityIdentifier("sheet.addRepo.initGit")
+                }
+                .confirmationDialog(
+                    "Initialize a new git repository?",
+                    isPresented: $confirmInit,
+                    titleVisibility: .visible
+                ) {
+                    Button("Initialize") { runInit(at: root) }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text(initConfirmationMessage(for: root))
+                }
+            }
+
             if let errorMessage {
                 Text(errorMessage).foregroundStyle(.red)
             }
@@ -61,11 +85,24 @@ struct AddRepoSheet: View {
                 Button("Cancel") { dismiss() }
                 Button("Add") { commit() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(selectedRoot == nil || displayName.isEmpty || errorMessage != nil)
+                    .disabled(selectedRoot == nil || displayName.isEmpty
+                              || errorMessage != nil || needsInit)
             }
         }
         .padding(20)
         .frame(width: 480)
+    }
+
+    /// Message for the init confirmation. Always shows the exact path; adds a
+    /// louder caution when the target is the home directory (a common slip that
+    /// would scatter a `.git` over the whole home folder).
+    private func initConfirmationMessage(for url: URL) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
+        let base = "git init will run in:\n\(url.path)"
+        if url.standardizedFileURL == home {
+            return base + "\n\n⚠️ This is your home directory — initializing git here is almost never what you want."
+        }
+        return base
     }
 
     private func pickFolder() {
@@ -78,15 +115,34 @@ struct AddRepoSheet: View {
         if displayName.isEmpty { displayName = url.lastPathComponent }
         discovered = []
         importChoices = []
+        errorMessage = nil
         guard svc.isGitRepo(at: url) else {
-            errorMessage = "Not a git repository: \(url.path)\nRun `git init` in the folder first or pick a different one."
+            // Not a repo (yet): offer in-app `git init` rather than blocking.
+            needsInit = true
             return
         }
-        errorMessage = nil
+        needsInit = false
+        loadWorktrees(at: url)
+    }
+
+    /// Run `git init` in `url`, then fall through to the normal discovery flow
+    /// so the freshly-created repo's main worktree is ready to import.
+    private func runInit(at url: URL) {
+        do {
+            try svc.gitInit(at: url)
+            needsInit = false
+            errorMessage = nil
+            loadWorktrees(at: url)
+        } catch {
+            errorMessage = "git init failed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Scan worktrees for `url` and default-check the main worktree (repo root
+    /// itself) so a repo with no extra worktrees still gets one sidebar entry.
+    private func loadWorktrees(at url: URL) {
         do {
             discovered = try svc.list(in: url)
-            // Default-check the main worktree (repo root itself) so a repo
-            // with no extra worktrees still gets one entry in the sidebar.
             importChoices = discovered.map {
                 $0.path.standardizedFileURL == url.standardizedFileURL
             }

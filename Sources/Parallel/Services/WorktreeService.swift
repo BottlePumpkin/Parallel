@@ -85,6 +85,15 @@ final class WorktreeService {
 }
 
 extension WorktreeService {
+    /// `git init -b main <path>` — initialize a brand-new repository in `path`.
+    /// Used by AddRepoSheet to turn a non-git folder into a usable repo in-app.
+    /// Default branch is `main` to match the rest of the app (worktree base,
+    /// branch suggestions). Safe to call on an already-initialized repo (git
+    /// treats re-init as a no-op), but callers gate on `isGitRepo` first.
+    func gitInit(at path: URL) throws {
+        try gitOrThrow(["init", "-b", "main"], in: path)
+    }
+
     /// Create a new worktree.
     /// - createBranch=true:  `git worktree add -b <branch> <path> <base>`
     /// - createBranch=false: `git worktree add <path> <branch>` (check out existing branch)
