@@ -63,10 +63,24 @@ fi
 git fetch origin master --quiet
 git worktree add "$WT_PATH" -b "$BRANCH" origin/master
 
+# Mark the issue in-progress on GitHub so every other session/worktree sees it.
+# (Local git branches are already shared across worktrees, but the GitHub board
+# is the cross-session / cross-machine source of truth.) Merging the PR with
+# `Closes #N` closes the issue, clearing it from the board automatically.
+gh label create in-progress --repo "$REPO_SLUG" \
+    --color FBCA04 --description "Being worked on in a worktree" >/dev/null 2>&1 || true
+if gh issue edit "$N" --repo "$REPO_SLUG" \
+        --add-label in-progress --add-assignee @me >/dev/null 2>&1; then
+    MARKED="in-progress + assigned to you"
+else
+    MARKED="⚠ couldn't set in-progress label/assignee — set it manually"
+fi
+
 echo
 echo "✓ Created worktree for issue #$N — $TITLE"
 echo "    branch:   $BRANCH"
 echo "    path:     $WT_PATH"
+echo "    status:   $MARKED"
 echo
 echo "Next (per docs/ISSUE_WORKFLOW.md): work in that worktree, then deliver"
 echo "with a 'Closes #$N' commit and 'gh pr create'."
