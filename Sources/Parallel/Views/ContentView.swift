@@ -140,9 +140,40 @@ struct ContentView: View {
         ContentActions(
             newWorktree: { newWorktreeTrigger = NewWorktreeTrigger(initialRepoId: nil) },
             addRepo:     { showAddRepo = true },
-            selectIndex: { idx in
-                if idx < store.worktrees.count {
-                    selectedWorktreeId = store.worktrees[idx].id
+            selectWorktreeIndex: { idx in
+                let ordered = store.orderedWorktrees
+                if idx < ordered.count {
+                    selectedWorktreeId = ordered[idx].id
+                }
+            },
+            selectTabIndex: { idx in
+                if let id = selectedWorktreeId {
+                    sessionManager.activateTab(in: id, at: idx)
+                }
+            },
+            nextTab: {
+                if let id = selectedWorktreeId {
+                    sessionManager.activateAdjacentTab(in: id, forward: true)
+                }
+            },
+            previousTab: {
+                if let id = selectedWorktreeId {
+                    sessionManager.activateAdjacentTab(in: id, forward: false)
+                }
+            },
+            newTab: {
+                if let id = selectedWorktreeId, let wt = store.worktree(id: id) {
+                    _ = sessionManager.startSession(for: wt, setupCommands: wt.setupCommands)
+                }
+            },
+            clearTerminal: {
+                if let id = selectedWorktreeId {
+                    sessionManager.clearActiveTerminal(in: id)
+                }
+            },
+            findInTerminal: {
+                if let id = selectedWorktreeId {
+                    sessionManager.showFind(in: id)
                 }
             },
             closeCurrentSession: {

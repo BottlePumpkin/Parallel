@@ -15,14 +15,32 @@ struct ParallelCommands: Commands {
         }
         CommandMenu("Worktree") {
             ForEach(1...9, id: \.self) { idx in
-                Button("Switch to Worktree \(idx)") { actions?.selectIndex(idx - 1) }
-                    .keyboardShortcut(KeyEquivalent(Character("\(idx)")), modifiers: .command)
+                Button("Switch to Worktree \(idx)") { actions?.selectWorktreeIndex(idx - 1) }
+                    .keyboardShortcut(KeyEquivalent(Character("\(idx)")), modifiers: [.command, .option])
             }
             Divider()
             Button("Close Session") { actions?.closeCurrentSession() }
                 .keyboardShortcut("w", modifiers: .command)
             Button("Delete Worktree…") { actions?.deleteCurrentWorktree() }
                 .keyboardShortcut(.delete, modifiers: .command)
+        }
+        CommandMenu("Terminal") {
+            Button("New Tab") { actions?.newTab() }
+                .keyboardShortcut("t", modifiers: .command)
+            Button("Clear") { actions?.clearTerminal() }
+                .keyboardShortcut("k", modifiers: .command)
+            Button("Find…") { actions?.findInTerminal() }
+                .keyboardShortcut("f", modifiers: .command)
+            Divider()
+            Button("Next Tab") { actions?.nextTab() }
+                .keyboardShortcut(.tab, modifiers: .control)
+            Button("Previous Tab") { actions?.previousTab() }
+                .keyboardShortcut(.tab, modifiers: [.control, .shift])
+            Divider()
+            ForEach(1...9, id: \.self) { idx in
+                Button("Switch to Tab \(idx)") { actions?.selectTabIndex(idx - 1) }
+                    .keyboardShortcut(KeyEquivalent(Character("\(idx)")), modifiers: .command)
+            }
         }
         CommandGroup(after: .appInfo) {
             Button("Check for Updates…") { actions?.checkForUpdates() }
@@ -37,7 +55,13 @@ struct ParallelCommands: Commands {
 struct ContentActions {
     var newWorktree: () -> Void = {}
     var addRepo: () -> Void = {}
-    var selectIndex: (Int) -> Void = { _ in }
+    var selectWorktreeIndex: (Int) -> Void = { _ in }
+    var selectTabIndex: (Int) -> Void = { _ in }
+    var nextTab: () -> Void = {}
+    var previousTab: () -> Void = {}
+    var newTab: () -> Void = {}
+    var clearTerminal: () -> Void = {}
+    var findInTerminal: () -> Void = {}
     var closeCurrentSession: () -> Void = {}
     var deleteCurrentWorktree: () -> Void = {}
     var checkForUpdates: () -> Void = {}
