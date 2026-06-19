@@ -8,6 +8,10 @@
 
 **Tech Stack:** Swift 5.10, SwiftUI, XCUITest, xcodegen, GitHub Actions (`macos-14`), real `git` CLI + `forkpty`.
 
+> **Build prerequisites (discovered in Task 1, apply to every Xcode build/test command below):**
+> 1. **Ad-hoc signing for XCUITest** — passing `CODE_SIGNING_ALLOWED=NO` makes the UI-test runner crash (`Early unexpected exit ... before establishing connection`) because the runner needs the `get-task-allow` entitlement to attach to the host app. Every `xcodebuild test` invocation MUST instead pass `CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES`.
+> 2. **Metal Toolchain** — SwiftTerm ships `Shaders.metal`, which Xcode (unlike `swift test`) compiles. On Xcode 16+/26 this needs a one-time `xcodebuild -downloadComponent MetalToolchain`. Run it once locally and in CI before building.
+
 **Spec:** `docs/superpowers/specs/2026-06-19-e2e-test-automation-design.md`
 
 ---
@@ -128,7 +132,7 @@ Run:
 brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
 xcodegen generate
 xcodebuild test -project Parallel.xcodeproj -scheme Parallel \
-  -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
+  -destination 'platform=macOS' CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES
 ```
 Expected: build succeeds, `LaunchSmokeTests` passes (`** TEST SUCCEEDED **`). If the app target fails to link SwiftTerm or compile `Sources/Parallel`, fix `project.yml` until the build is green — this is the bootstrap gate for everything else.
 
@@ -727,7 +731,7 @@ Run:
 ```bash
 xcodegen generate
 xcodebuild build-for-testing -project Parallel.xcodeproj -scheme Parallel \
-  -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
+  -destination 'platform=macOS' CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES
 ```
 Expected: build succeeds (no test run yet — just confirms the support files compile).
 
@@ -780,7 +784,7 @@ Run:
 xcodegen generate
 xcodebuild test -project Parallel.xcodeproj -scheme Parallel \
   -destination 'platform=macOS' -only-testing:ParallelUITests/WorktreeListTests \
-  CODE_SIGNING_ALLOWED=NO
+  CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES
 ```
 Expected: PASS. If the row text isn't found, confirm `TestSeed.applyIfNeeded` runs (env propagated) and that `feature-x` is the displayed `displayName`. Temp paths under `/var/folders/...` contain no spaces, so the inline JSON is valid.
 
@@ -867,7 +871,7 @@ Run:
 xcodegen generate
 xcodebuild test -project Parallel.xcodeproj -scheme Parallel \
   -destination 'platform=macOS' -only-testing:ParallelUITests/NewWorktreeTests \
-  CODE_SIGNING_ALLOWED=NO
+  CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES
 ```
 Expected: PASS. This is the most fragile test; likely failure points and fixes:
 - **Picker interaction**: on macOS a `Picker` renders as a pop-up button → `popUpButtons[...]` then `menuItems[...]`. If not matched, inspect with `po app.popUpButtons` / `po app.menuItems` in a breakpoint or `app.debugDescription`.
@@ -934,7 +938,7 @@ Run:
 xcodegen generate
 xcodebuild test -project Parallel.xcodeproj -scheme Parallel \
   -destination 'platform=macOS' -only-testing:ParallelUITests/DeleteWorktreeTests \
-  CODE_SIGNING_ALLOWED=NO
+  CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES
 ```
 Expected: PASS. If ⌘⌫ doesn't open the sheet, ensure the row is selected first (the menu action deletes `selectedWorktreeId`); a `row.click()` immediately before the key press selects it.
 
@@ -943,7 +947,7 @@ Expected: PASS. If ⌘⌫ doesn't open the sheet, ensure the row is selected fir
 Run:
 ```bash
 xcodebuild test -project Parallel.xcodeproj -scheme Parallel \
-  -destination 'platform=macOS' -only-testing:ParallelUITests CODE_SIGNING_ALLOWED=NO
+  -destination 'platform=macOS' -only-testing:ParallelUITests CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES
 ```
 Expected: all UI tests pass back-to-back (each uses an isolated fixture, so order doesn't matter).
 
@@ -995,6 +999,8 @@ jobs:
           xcode-version: latest-stable
       - name: Install xcodegen
         run: brew install xcodegen
+      - name: Download Metal Toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
       - name: Generate Xcode project
         run: xcodegen generate
       - name: Run UI tests
@@ -1005,7 +1011,7 @@ jobs:
             -destination 'platform=macOS' \
             -only-testing:ParallelUITests \
             -retry-tests-on-failure -test-iterations 2 \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES
 ```
 
 - [ ] **Step 2: Validate the YAML locally**
