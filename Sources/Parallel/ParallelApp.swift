@@ -10,7 +10,9 @@ struct ParallelApp: App {
         // Force regular foreground app so .commands { ParallelCommands() } works.
         NSApplication.shared.setActivationPolicy(.regular)
         NSApplication.shared.activate(ignoringOtherApps: true)
-        Notifications.requestPermission()
+        if !TestMode.isE2E() {
+            Notifications.requestPermission()
+        }
     }
 
     @State private var store: WorkspaceStore = {

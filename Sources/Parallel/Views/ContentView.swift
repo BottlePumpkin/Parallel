@@ -71,7 +71,9 @@ struct ContentView: View {
         ))
         .focusedValue(\.contentActions, focusedActions)
         .task(id: "update-startup-check") {
-            await updateChecker.checkIfStale()
+            if !TestMode.isE2E() {
+                await updateChecker.checkIfStale()
+            }
         }
         .onAppear {
             if selectedWorktreeId == nil {
