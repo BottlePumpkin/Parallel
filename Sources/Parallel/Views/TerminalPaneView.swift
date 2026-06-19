@@ -220,18 +220,30 @@ struct TerminalPaneView: View {
 /// SwiftTerm caches its grid size from `setFrameSize`, and the cached value
 /// gets out of date while the view is hidden — leading to stale scrollback
 /// and occasional blank panes after worktree/tab switches.
-private struct MountedTerminalView: NSViewRepresentable {
+struct MountedTerminalView: NSViewRepresentable {
     let terminalView: TerminalView
     let isVisible: Bool
 
+    /// Whether a terminal whose visibility just changed should grab keyboard
+    /// focus. Focus is taken only when a previously-hidden view becomes
+    /// visible (a worktree/tab switch) — never when it becomes hidden or
+    /// while it stays in the same visibility state. Keeping this pure makes
+    /// the focus contract testable without an AppKit window.
+    static func shouldTakeFocus(wasHidden: Bool, isVisible: Bool) -> Bool {
+        wasHidden && isVisible
+    }
+
     func makeNSView(context: Context) -> TerminalView {
         terminalView.isHidden = !isVisible
+        // A freshly-created tab mounts visible without a hidden→visible
+        // transition, so give it focus here too (issue #7: "새 탭 생성").
+        if isVisible { focusWhenReady(terminalView) }
         return terminalView
     }
     func updateNSView(_ nsView: TerminalView, context: Context) {
-        let becameVisible = nsView.isHidden && isVisible
+        let wasHidden = nsView.isHidden
         nsView.isHidden = !isVisible
-        guard becameVisible else { return }
+        guard Self.shouldTakeFocus(wasHidden: wasHidden, isVisible: isVisible) else { return }
         if let parent = nsView.superview {
             let target = parent.bounds
             if target.size.width > 1, target.size.height > 1, nsView.frame != target {
@@ -240,5 +252,20 @@ private struct MountedTerminalView: NSViewRepresentable {
         }
         nsView.needsLayout = true
         nsView.needsDisplay = true
+        focusWhenReady(nsView)
+    }
+
+    /// Move keyboard focus to the terminal so the user can type immediately
+    /// after switching worktrees/tabs or opening a new tab (issue #7).
+    /// Deferred to the next runloop tick so it lands after the layout pass and
+    /// after the sidebar click that triggered the switch finishes resigning
+    /// focus — otherwise focus bounces back to the sidebar. The guards drop the
+    /// request if the view was re-hidden by a rapid follow-up switch or is not
+    /// yet in a window.
+    private func focusWhenReady(_ view: TerminalView) {
+        DispatchQueue.main.async { [weak view] in
+            guard let view, !view.isHidden, let window = view.window else { return }
+            window.makeFirstResponder(view)
+        }
     }
 }
