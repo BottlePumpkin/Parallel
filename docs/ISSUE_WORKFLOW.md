@@ -43,15 +43,19 @@ Classify the issue so the correct Phase 2 branch (2a or 2b) is taken:
 ### Command cheat sheet
 
 ```bash
-# 0. Read the issue
+# 0. Survey the board (the cross-session source of truth) and read the issue
+gh issue list                       # all open
+gh issue list --label in-progress   # already being worked on — don't double-pick
 gh issue view N
 
 # 3. Work in a per-issue worktree. Naming is FIXED: worktree + branch = issue-N
-#    (so there's never a name to invent). The helper verifies the issue exists
-#    and creates the worktree off the latest master in one step:
+#    (so there's never a name to invent). The helper verifies the issue exists,
+#    creates the worktree off the latest master, AND marks the issue
+#    in-progress + assigns it to you so every other session/worktree sees it:
 ./scripts/new-issue-worktree.sh N
 #    …equivalent to:
 git worktree add .claude/worktrees/issue-N -b issue-N origin/master
+gh issue edit N --add-label in-progress --add-assignee @me   # merging Closes #N clears it
 swift test                       # must pass before delivery
 
 # 4. Open the PR (after the human approves)
