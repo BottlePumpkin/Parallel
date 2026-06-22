@@ -26,6 +26,7 @@ struct ParallelApp: App {
     @State private var statusWatcher: StatusWatcher?
     @State private var caffeinate = CaffeinateManager()
     @State private var updateChecker = UpdateChecker()
+    @State private var updater = Updater()
 
     var body: some Scene {
         WindowGroup("Parallel") {
@@ -35,6 +36,7 @@ struct ParallelApp: App {
                 .environment(sessionManager)
                 .environment(caffeinate)
                 .environment(updateChecker)
+                .environment(updater)
                 .onAppear {
                     if statusWatcher == nil {
                         let w = StatusWatcher(store: store)

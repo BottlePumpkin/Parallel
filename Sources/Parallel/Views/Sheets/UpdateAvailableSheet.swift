@@ -4,11 +4,22 @@ import AppKit
 struct UpdateAvailableSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(UpdateChecker.self) private var checker
+    @Environment(Updater.self) private var updater
     let info: UpdateInfo
 
     private let installCommand = "curl -fsSL https://raw.githubusercontent.com/BottlePumpkin/Parallel/master/scripts/install.sh | bash"
 
     @State private var copied = false
+
+    private var target: UpdateInstallTarget {
+        UpdateInstallTarget.resolve(bundleURL: Bundle.main.bundleURL)
+    }
+
+    private var canUpdateInApp: Bool {
+        if info.assetURL == nil { return false }
+        if case .replaceable = target { return true }
+        return false
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -29,29 +40,7 @@ struct UpdateAvailableSheet: View {
             .frame(minHeight: 180, maxHeight: 280)
             .background(RoundedRectangle(cornerRadius: 6).fill(.quaternary))
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Install command").font(.headline)
-                HStack {
-                    Text(installCommand)
-                        .font(.system(.caption, design: .monospaced))
-                        .lineLimit(2)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Button(copied ? "Copied" : "Copy") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(installCommand, forType: .string)
-                        copied = true
-                    }
-                }
-            }
-            .task(id: copied) {
-                guard copied else { return }
-                try? await Task.sleep(nanoseconds: 1_800_000_000)
-                if !Task.isCancelled {
-                    copied = false
-                }
-            }
+            progressOrFallback
 
             HStack {
                 Button("Skip This Version") {
@@ -60,14 +49,92 @@ struct UpdateAvailableSheet: View {
                 }
                 Spacer()
                 Button("Later") { dismiss() }
-                Button("Open Release Page") {
-                    NSWorkspace.shared.open(info.releaseURL)
-                    dismiss()
+                if canUpdateInApp {
+                    Button("Update Now") {
+                        if case .replaceable(let url) = target {
+                            updater.update(from: info, target: url)
+                        }
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(isBusy)
+                } else {
+                    Button("Open Release Page") {
+                        NSWorkspace.shared.open(info.releaseURL)
+                        dismiss()
+                    }
+                    .keyboardShortcut(.defaultAction)
                 }
-                .keyboardShortcut(.defaultAction)
             }
         }
         .padding(20)
         .frame(width: 540)
+    }
+
+    private var isBusy: Bool {
+        switch updater.phase {
+        case .idle, .failed: return false
+        default: return true
+        }
+    }
+
+    @ViewBuilder
+    private var progressOrFallback: some View {
+        switch updater.phase {
+        case .downloading(let fraction):
+            HStack {
+                ProgressView(value: fraction).frame(maxWidth: .infinity)
+                Button("Cancel") { updater.cancel() }
+            }
+        case .unpacking, .verifying, .installing, .relaunching:
+            HStack { ProgressView(); Text(statusText).foregroundStyle(.secondary) }
+        case .failed(let message):
+            VStack(alignment: .leading, spacing: 4) {
+                Text(message).font(.callout).foregroundStyle(.red)
+                manualFallback
+            }
+        case .idle:
+            if !canUpdateInApp {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(fallbackReason).font(.callout).foregroundStyle(.secondary)
+                    manualFallback
+                }
+            }
+        }
+    }
+
+    private var statusText: String {
+        switch updater.phase {
+        case .unpacking: return "Unpacking…"
+        case .verifying: return "Verifying…"
+        case .installing: return "Installing…"
+        case .relaunching: return "Relaunching…"
+        default: return ""
+        }
+    }
+
+    private var fallbackReason: String {
+        if info.assetURL == nil { return "This release has no downloadable build — install manually:" }
+        if case .unsupported(let reason) = target { return reason + " Install manually:" }
+        return "Install manually:"
+    }
+
+    private var manualFallback: some View {
+        HStack {
+            Text(installCommand)
+                .font(.system(.caption, design: .monospaced))
+                .lineLimit(2).truncationMode(.middle).textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button(copied ? "Copied" : "Copy") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(installCommand, forType: .string)
+                copied = true
+            }
+            Button("Open Release Page") { NSWorkspace.shared.open(info.releaseURL) }
+        }
+        .task(id: copied) {
+            guard copied else { return }
+            try? await Task.sleep(nanoseconds: 1_800_000_000)
+            if !Task.isCancelled { copied = false }
+        }
     }
 }
