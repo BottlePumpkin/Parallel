@@ -1,15 +1,24 @@
 # Changelog
 
 All notable changes to Parallel are documented here.
-## [Unreleased]
+## [v0.4.0](https://github.com/BottlePumpkin/Parallel/compare/v0.3.0...v0.4.0) (2026-06-22)
 
 ### Bug Fixes
 
+- **updates:** Guard mid-update dismiss, clear stale failure, require https (#5) ([`4035c2b`](https://github.com/BottlePumpkin/Parallel/commit/4035c2bc49c4df45471e091ee8d645ae37018d54))
+- **updates:** Map download cancellation (URLError.cancelled) to idle, not failed (#5) ([`4d1512c`](https://github.com/BottlePumpkin/Parallel/commit/4d1512c7b4f7b873c7e6cf2273a1605cfc966706))
+- **updates:** Faster delegate download, semver verify, safe relaunch, off-main ditto (#5) ([`6ffbb95`](https://github.com/BottlePumpkin/Parallel/commit/6ffbb956692d75fd719c0d408cd0b0eff5c3837b))
 - **release:** Annotated tag + atomic rollback + not-behind preflight ([`65ba87e`](https://github.com/BottlePumpkin/Parallel/commit/65ba87e355fe23c2e4ec68f25a7566214e8ab54a))
 - **views:** Auto-focus terminal on worktree/tab switch (#10) ([`e5a107c`](https://github.com/BottlePumpkin/Parallel/commit/e5a107c4547ccca294afb6c264108223c6caf568))
 
 ### Features
 
+- **updates:** Update Now button + progress UI + manual fallback (#5) ([`7ec59b7`](https://github.com/BottlePumpkin/Parallel/commit/7ec59b74537547a80e0a5fd4122bbb6a32c96d14))
+- **updates:** Updater pipeline — download, verify, in-place swap, relaunch (#5) ([`38bb0d6`](https://github.com/BottlePumpkin/Parallel/commit/38bb0d644af092b9994e79a85b734d6bbb259eea))
+- **updates:** Updater skeleton + bundle-version helper (#5) ([`ab65512`](https://github.com/BottlePumpkin/Parallel/commit/ab6551247f1d78db242ab64b435848cbd18bf9d9))
+- **updates:** UpdateInstallTarget replaceability resolver (#5) ([`2045e89`](https://github.com/BottlePumpkin/Parallel/commit/2045e8907639490180198d0dbe93d980034a2d32))
+- **updates:** Parse -mac.zip asset URL into UpdateInfo (#5) ([`17a4ba0`](https://github.com/BottlePumpkin/Parallel/commit/17a4ba0c697a887f4fe6b125460c0f0a27fbe7f0))
+- Wire ⌘C/⌘V copy-paste + ⌘+/⌘-/⌘0 terminal font zoom ([`634f2cb`](https://github.com/BottlePumpkin/Parallel/commit/634f2cb00e911bef7f34ce374f8830eb7e2b474a))
 - **views:** In-app `git init` for non-git folders in Add Repository ([`35fb333`](https://github.com/BottlePumpkin/Parallel/commit/35fb33386e70e96c7fefab4501288d3685d49d4f))
 ## [v0.3.0](https://github.com/BottlePumpkin/Parallel/compare/v0.2.0...v0.3.0) (2026-06-19)
 
