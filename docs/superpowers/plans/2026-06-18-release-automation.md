@@ -232,8 +232,8 @@ echo "✅ Released $TAG → https://github.com/$REPO/releases/tag/$TAG"
 
 > **Note:** the lightweight-tag/`--follow-tags` bug, the rollback trap, the
 > not-behind preflight, and the `read || true` / empty-changelog guards above
-> were added during code review (commit `d7f9091`). The `if git diff --cached
-> --quiet; then die; fi` form is deliberate — the `&&` form would trip `set -e`.
+> were added during code review. The `if git diff --cached --quiet; then die; fi`
+> form is deliberate — the `&&` form would trip `set -e`.
 
 - [ ] **Step 2: Make it executable**
 
