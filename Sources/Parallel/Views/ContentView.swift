@@ -185,6 +185,9 @@ struct ContentView: View {
                     sessionManager.showFind(in: id)
                 }
             },
+            increaseFontSize: { sessionManager.increaseFontSize() },
+            decreaseFontSize: { sessionManager.decreaseFontSize() },
+            resetFontSize:    { sessionManager.resetFontSize() },
             closeCurrentSession: {
                 if let id = selectedWorktreeId {
                     sessionManager.terminate(worktreeId: id)

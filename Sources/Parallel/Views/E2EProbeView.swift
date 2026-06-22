@@ -29,6 +29,9 @@ struct E2EProbeView: View {
             Text("trf")
                 .accessibilityIdentifier("e2e.terminalHasFocus")
                 .accessibilityValue(terminalHasFocus ? "1" : "0")
+            Text("fs")
+                .accessibilityIdentifier("e2e.terminalFontSize")
+                .accessibilityValue("\(Int(sessionManager.terminalFontSize))")
         }
         .frame(width: 1, height: 1)
         .opacity(0.01)

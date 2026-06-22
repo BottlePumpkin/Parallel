@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// App-level menu commands. The actual actions are owned by ContentView and
 /// exposed to the menu via FocusedValue. Menu items are disabled when no
@@ -6,7 +7,25 @@ import SwiftUI
 struct ParallelCommands: Commands {
     @FocusedValue(\.contentActions) var actions
 
+    /// Dispatch a standard editing selector down the responder chain so the
+    /// focused `TerminalView` (which implements `copy:` / `paste:` /
+    /// `selectAll:`) handles it. The app shipped without an Edit menu, so these
+    /// key equivalents were never routed — this wires them explicitly.
+    private func sendToResponder(_ selector: Selector) {
+        NSApp.sendAction(selector, to: nil, from: nil)
+    }
+
     var body: some Commands {
+        // ⌘C / ⌘V / ⌘A — copy / paste / select-all in the focused terminal.
+        // Replaces the empty default pasteboard group so the items actually exist.
+        CommandGroup(replacing: .pasteboard) {
+            Button("Copy") { sendToResponder(#selector(NSText.copy(_:))) }
+                .keyboardShortcut("c", modifiers: .command)
+            Button("Paste") { sendToResponder(#selector(NSText.paste(_:))) }
+                .keyboardShortcut("v", modifiers: .command)
+            Button("Select All") { sendToResponder(#selector(NSText.selectAll(_:))) }
+                .keyboardShortcut("a", modifiers: .command)
+        }
         CommandGroup(replacing: .newItem) {
             Button("New Worktree…") { actions?.newWorktree() }
                 .keyboardShortcut("n", modifiers: .command)
@@ -31,6 +50,13 @@ struct ParallelCommands: Commands {
                 .keyboardShortcut("k", modifiers: .command)
             Button("Find…") { actions?.findInTerminal() }
                 .keyboardShortcut("f", modifiers: .command)
+            Divider()
+            Button("Increase Font Size") { actions?.increaseFontSize() }
+                .keyboardShortcut("+", modifiers: .command)
+            Button("Decrease Font Size") { actions?.decreaseFontSize() }
+                .keyboardShortcut("-", modifiers: .command)
+            Button("Reset Font Size") { actions?.resetFontSize() }
+                .keyboardShortcut("0", modifiers: .command)
             Divider()
             Button("Next Tab") { actions?.nextTab() }
                 .keyboardShortcut(.tab, modifiers: .control)
@@ -62,6 +88,9 @@ struct ContentActions {
     var newTab: () -> Void = {}
     var clearTerminal: () -> Void = {}
     var findInTerminal: () -> Void = {}
+    var increaseFontSize: () -> Void = {}
+    var decreaseFontSize: () -> Void = {}
+    var resetFontSize: () -> Void = {}
     var closeCurrentSession: () -> Void = {}
     var deleteCurrentWorktree: () -> Void = {}
     var checkForUpdates: () -> Void = {}
