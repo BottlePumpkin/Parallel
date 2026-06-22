@@ -7,6 +7,7 @@ struct UpdateInfo: Equatable {
     let releaseURL: URL
     let releaseNotes: String
     let publishedAt: Date
+    let assetURL: URL?
 }
 
 enum UpdateCheckResult {
@@ -54,6 +55,11 @@ final class UpdateChecker {
         self.session = session
         self.defaults = defaults
         self.currentVersionProvider = currentVersionProvider
+    }
+
+    /// First asset whose filename ends in `-mac.zip` (the notarized build).
+    static func selectMacZipAsset(from assets: [(name: String, url: URL)]) -> URL? {
+        assets.first { $0.name.hasSuffix("-mac.zip") }?.url
     }
 
     /// Called from ContentView.task at launch. Skips when the last check
@@ -111,12 +117,16 @@ final class UpdateChecker {
 
         let current = currentVersionProvider()
         if latest > current {
+            let assetURL = UpdateChecker.selectMacZipAsset(
+                from: (payload.assets ?? []).map { ($0.name, $0.browserDownloadUrl) }
+            )
             let info = UpdateInfo(
                 latestTag: payload.tagName,
                 latestVersion: latest,
                 releaseURL: payload.htmlUrl,
                 releaseNotes: payload.body ?? "",
-                publishedAt: payload.publishedAt
+                publishedAt: payload.publishedAt,
+                assetURL: assetURL
             )
             lastCheckResult = .available(info)
             if force || defaults.skippedUpdateVersion != latest.description {
@@ -141,10 +151,20 @@ private struct ReleasePayload: Decodable {
     let htmlUrl: URL
     let body: String?
     let publishedAt: Date
+    let assets: [Asset]?
+    struct Asset: Decodable {
+        let name: String
+        let browserDownloadUrl: URL
+        enum CodingKeys: String, CodingKey {
+            case name
+            case browserDownloadUrl = "browser_download_url"
+        }
+    }
     enum CodingKeys: String, CodingKey {
         case tagName = "tag_name"
         case htmlUrl = "html_url"
         case body
         case publishedAt = "published_at"
+        case assets
     }
 }
