@@ -37,6 +37,22 @@ final class UpdateCheckerTests: XCTestCase {
         return json.data(using: .utf8)!
     }
 
+    private func payloadWithAssets(tag: String) -> Data {
+        let json = #"""
+        {
+          "tag_name": "\#(tag)",
+          "html_url": "https://github.com/BottlePumpkin/Parallel/releases/tag/\#(tag)",
+          "body": "notes",
+          "published_at": "2026-06-15T12:00:00Z",
+          "assets": [
+            {"name": "source.txt", "browser_download_url": "https://example.com/source.txt"},
+            {"name": "Parallel-\#(tag.dropFirst())-mac.zip", "browser_download_url": "https://example.com/Parallel-mac.zip"}
+          ]
+        }
+        """#
+        return json.data(using: .utf8)!
+    }
+
     private func makeChecker() -> UpdateChecker {
         UpdateChecker(session: session, defaults: defaults, currentVersionProvider: { SemanticVersion("0.1.4")! })
     }
@@ -173,5 +189,41 @@ final class UpdateCheckerTests: XCTestCase {
         defaults.skippedUpdateVersion = "0.1.5"
         await checker.check(force: true)
         XCTAssertNotNil(checker.updateAvailable, "force check must surface skipped version")
+    }
+
+    func test_check_parses_mac_zip_asset_url() async {
+        StubURLProtocol.requestHandler = { req in
+            let resp = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (resp, self.payloadWithAssets(tag: "v0.1.5"))
+        }
+        let checker = makeChecker()
+        await checker.check(force: true)
+        guard case .available(let info)? = checker.lastCheckResult else {
+            return XCTFail("expected .available")
+        }
+        XCTAssertEqual(info.assetURL, URL(string: "https://example.com/Parallel-mac.zip"))
+    }
+
+    func test_check_assetURL_nil_when_no_mac_zip() async {
+        StubURLProtocol.requestHandler = { req in
+            let resp = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (resp, self.payload(tag: "v0.1.5"))
+        }
+        let checker = makeChecker()
+        await checker.check(force: true)
+        guard case .available(let info)? = checker.lastCheckResult else {
+            return XCTFail("expected .available")
+        }
+        XCTAssertNil(info.assetURL)
+    }
+
+    func test_selectMacZipAsset_picks_first_mac_zip() {
+        let url = UpdateChecker.selectMacZipAsset(from: [
+            ("notes.txt", URL(string: "https://e.com/notes.txt")!),
+            ("Parallel-0.4.0-mac.zip", URL(string: "https://e.com/a-mac.zip")!),
+            ("Parallel-0.5.0-mac.zip", URL(string: "https://e.com/b-mac.zip")!),
+        ])
+        XCTAssertEqual(url, URL(string: "https://e.com/a-mac.zip"))
+        XCTAssertNil(UpdateChecker.selectMacZipAsset(from: [("x.txt", URL(string: "https://e.com/x")!)]))
     }
 }
