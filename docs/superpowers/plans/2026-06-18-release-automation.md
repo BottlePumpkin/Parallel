@@ -158,7 +158,7 @@ VERSION="${1:-}"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "Version must be X.Y.Z (got '$VERSION')"
 TAG="v$VERSION"
 
-# --- Preflight (fail fast) ---
+# --- Preflight (fail fast, before any mutation or the slow build) ---
 command -v git-cliff >/dev/null || die "git-cliff not installed — brew install git-cliff"
 command -v gh >/dev/null || die "gh not installed — brew install gh"
 gh auth status --hostname "$GH_HOST" >/dev/null 2>&1 \
@@ -166,6 +166,9 @@ gh auth status --hostname "$GH_HOST" >/dev/null 2>&1 \
 [[ "$(git rev-parse --abbrev-ref HEAD)" == "master" ]] || die "Not on master"
 git diff --quiet && git diff --cached --quiet || die "Working tree not clean — commit or stash first"
 ! git rev-parse "$TAG" >/dev/null 2>&1 || die "Tag $TAG already exists"
+git fetch --quiet origin master || die "git fetch origin master failed"
+git merge-base --is-ancestor origin/master HEAD \
+  || die "origin/master has commits you don't have — pull/rebase before releasing"
 
 if [[ -z "${NOTARY_PROFILE:-}" || -z "${SIGN_IDENTITY:-}" ]]; then
   echo "⚠️  NOTARY_PROFILE/SIGN_IDENTITY unset — this release will be UNNOTARIZED."
@@ -183,29 +186,54 @@ if $DRY_RUN; then
   exit 0
 fi
 
-read -r -p "Proceed to build, push, and publish $TAG? [y/N] " ans
+read -r -p "Proceed to build, push, and publish $TAG? [y/N] " ans || true
 [[ "$ans" == "y" || "$ans" == "Y" ]] || die "Aborted by user."
 
-# --- Changelog + commit + tag (local, still reversible until push) ---
+# --- The local phase (changelog commit + tag) is atomic: an EXIT trap rolls it
+#     back if anything fails before we push (e.g. notarization), so a re-run
+#     isn't blocked by a half-created tag. Disarmed once the push lands. ---
+PRE_RELEASE_HEAD="$(git rev-parse HEAD)"
+PUSHED=false
+DONE=false
+cleanup() {
+  $DONE && return
+  $PUSHED && return  # already public — can't roll back; die printed recovery steps
+  echo "↩️  Rolling back local changelog commit + tag for $TAG (nothing was pushed)…" >&2
+  git rev-parse "$TAG" >/dev/null 2>&1 && git tag -d "$TAG" >/dev/null 2>&1 || true
+  git reset --hard "$PRE_RELEASE_HEAD" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+# --- Changelog + commit + annotated tag (rolled back on failure until pushed).
+#     Annotated (not lightweight) so `git push --follow-tags` actually pushes it. ---
 git-cliff --tag "$TAG" -o CHANGELOG.md
 git add CHANGELOG.md
+if git diff --cached --quiet; then die "CHANGELOG.md unchanged — nothing to release for $TAG"; fi
 git commit -m "docs: changelog for $TAG"
-git tag "$TAG"
+git tag -a "$TAG" -m "Release $TAG"
 
 # --- Build / notarize / zip ---
 ./scripts/build-app.sh "$VERSION"
 ZIP="build/Parallel-$VERSION-mac.zip"
 [[ -f "$ZIP" ]] || die "Expected $ZIP not found after build — aborting before push."
 
-# --- Irreversible: push + publish ---
+# --- Irreversible: push (annotated tag travels with --follow-tags) ---
 git push origin master --follow-tags
-gh release create "$TAG" "$ZIP" \
-  --repo "$REPO" \
-  --title "$TAG" \
-  --notes "$NOTES"
+PUSHED=true
 
+# --- Publish; if this fails the tag is already public, so tell the operator how to finish ---
+gh release create "$TAG" "$ZIP" --repo "$REPO" --title "$TAG" --notes "$NOTES" \
+  || die "Pushed $TAG but 'gh release create' failed. Finish manually:
+    gh release create $TAG \"$ZIP\" --repo $REPO --title $TAG --notes '<paste notes>'"
+
+DONE=true
 echo "✅ Released $TAG → https://github.com/$REPO/releases/tag/$TAG"
 ```
+
+> **Note:** the lightweight-tag/`--follow-tags` bug, the rollback trap, the
+> not-behind preflight, and the `read || true` / empty-changelog guards above
+> were added during code review. The `if git diff --cached --quiet; then die; fi`
+> form is deliberate — the `&&` form would trip `set -e`.
 
 - [ ] **Step 2: Make it executable**
 

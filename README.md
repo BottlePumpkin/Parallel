@@ -84,13 +84,25 @@ One-time setup:
    export NOTARY_PROFILE="parallel-notary"
    ```
 
-Then every release is one command:
+For a build-only `.app` (no publish), `./scripts/build-app.sh 0.4.0` signs with
+hardened runtime, submits to Apple, waits for notarization (1-5 min), staples the
+ticket onto the `.app`, and re-zips.
+
+To cut and publish a full release in one command:
 
 ```bash
-./scripts/build-app.sh 0.2.0
+brew install git-cliff               # one-time
+gh auth login --hostname github.com  # one-time (public repo lives on github.com)
+
+./scripts/release.sh 0.4.0
 ```
 
-It signs with hardened runtime, submits to Apple, waits for notarization (1-5 min), staples the ticket onto the `.app`, and re-zips. Users double-click to launch on any Mac — no warnings.
+`release.sh` regenerates `CHANGELOG.md` from Conventional Commits, previews the
+release notes, and — after you confirm — commits the changelog, tags the version,
+builds + notarizes via `build-app.sh`, pushes, and creates the GitHub Release with
+the notarized zip attached. The generated notes become the release body that the
+in-app **Check for Updates** shows. Use `./scripts/release.sh --dry-run 0.4.0` to
+preview without pushing.
 
 ### Optional: Install a Nerd Font
 
