@@ -26,6 +26,28 @@ final class SessionManager {
         return ((current + delta) % count + count) % count
     }
 
+    // MARK: - Terminal font sizing (⌘+ / ⌘- / ⌘0)
+
+    /// Default terminal point size and the bounds the user can zoom within.
+    static let defaultFontSize: CGFloat = 13
+    static let minFontSize: CGFloat = 8
+    static let maxFontSize: CGFloat = 32
+    /// One ⌘+ / ⌘- step.
+    static let fontSizeStep: CGFloat = 1
+    /// UserDefaults key the chosen size is persisted under.
+    static let fontSizeDefaultsKey = "terminalFontSize"
+
+    /// Clamp a point size into `[minFontSize, maxFontSize]`. Pure, unit-tested.
+    static func clampedFontSize(_ size: CGFloat) -> CGFloat {
+        min(max(size, minFontSize), maxFontSize)
+    }
+
+    /// Next size when stepping `current` by `delta`, clamped to the bounds.
+    /// Pure math, unit-tested independently of any live TerminalView.
+    static func steppedFontSize(from current: CGFloat, delta: CGFloat) -> CGFloat {
+        clampedFontSize(current + delta)
+    }
+
     /// sessionId → entry. The single source of truth for live sessions.
     private var sessionsById: [UUID: SessionEntry] = [:]
     /// worktreeId → ordered list of sessionIds (tab order).
@@ -37,6 +59,21 @@ final class SessionManager {
     /// after both store and sessionManager are constructed. Weak-ish (strong
     /// here is fine since they share the app's lifetime).
     var store: WorkspaceStore?
+
+    /// Current terminal point size, applied to every live `TerminalView`.
+    /// Seeded from the persisted value (falling back to `defaultFontSize`) and
+    /// updated by the ⌘+ / ⌘- / ⌘0 commands. `@Observable` so the e2e probe and
+    /// any size-dependent UI re-render on change.
+    private(set) var terminalFontSize: CGFloat = SessionManager.loadPersistedFontSize()
+
+    private static func loadPersistedFontSize() -> CGFloat {
+        // E2E runs must be hermetic: the size lives in standard UserDefaults
+        // (not the isolated support dir), so always start from the default
+        // there rather than leak a size between test runs.
+        guard !TestMode.isE2E() else { return defaultFontSize }
+        let stored = UserDefaults.standard.double(forKey: fontSizeDefaultsKey)
+        return stored > 0 ? clampedFontSize(CGFloat(stored)) : defaultFontSize
+    }
 
     /// `SessionEntry` is a class so the delegate, pty, and view share one
     /// lifetime and we don't need a parallel retain dict. SwiftTerm's
@@ -140,7 +177,7 @@ final class SessionManager {
         AppLogger.session.info("start \(worktree.displayName, privacy: .public) pid=\(pty.pid)")
 
         let view = TerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 500))
-        view.font = Self.preferredTerminalFont
+        view.font = Self.terminalFont(size: terminalFontSize)
         // SwiftTerm's default scrollback is 500 lines and Buffer.resize
         // trims oldest rows whenever the grid shrinks. ZStack frame changes
         // during worktree / tab switches were silently truncating the
@@ -329,6 +366,37 @@ final class SessionManager {
         _ = startSession(for: worktree, setupCommands: setupCommands)
     }
 
+    // MARK: - Font sizing
+
+    /// ⌘+ — grow the terminal font one step (clamped to `maxFontSize`).
+    func increaseFontSize() {
+        applyFontSize(Self.steppedFontSize(from: terminalFontSize, delta: Self.fontSizeStep))
+    }
+
+    /// ⌘- — shrink the terminal font one step (clamped to `minFontSize`).
+    func decreaseFontSize() {
+        applyFontSize(Self.steppedFontSize(from: terminalFontSize, delta: -Self.fontSizeStep))
+    }
+
+    /// ⌘0 — restore the default terminal font size.
+    func resetFontSize() {
+        applyFontSize(Self.defaultFontSize)
+    }
+
+    /// Apply `size` (clamped) to every live `TerminalView` and persist it.
+    /// No-op when the size is unchanged so a key-repeat at a bound is cheap.
+    private func applyFontSize(_ size: CGFloat) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        let clamped = Self.clampedFontSize(size)
+        guard clamped != terminalFontSize else { return }
+        terminalFontSize = clamped
+        let font = Self.terminalFont(size: clamped)
+        for entry in sessionsById.values {
+            entry.terminalView.font = font
+        }
+        UserDefaults.standard.set(Double(clamped), forKey: Self.fontSizeDefaultsKey)
+    }
+
     // MARK: - Private
 
     private func markExited(sessionId: UUID) {
@@ -363,11 +431,10 @@ final class SessionManager {
         e.pendingSetupCommands = []
     }
 
-    /// Best installed font for the terminal. Prefers Nerd Fonts so popular
-    /// prompts (powerlevel10k, starship) render correctly. Falls back to the
-    /// user's likely iTerm font (D2Coding) and finally Menlo.
-    static let preferredTerminalFont: NSFont = {
-        let size: CGFloat = 13
+    /// Best installed terminal font family at `size`. Prefers Nerd Fonts so
+    /// popular prompts (powerlevel10k, starship) render correctly. Falls back
+    /// to the user's likely iTerm font (D2Coding) and finally Menlo.
+    static func terminalFont(size: CGFloat) -> NSFont {
         let candidates = [
             "MesloLGS Nerd Font Mono",
             "MesloLGS Nerd Font",
@@ -384,7 +451,10 @@ final class SessionManager {
             if let f = NSFont(name: name, size: size) { return f }
         }
         return NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
-    }()
+    }
+
+    /// Default-size terminal font. Kept for callers that don't track size.
+    static var preferredTerminalFont: NSFont { terminalFont(size: defaultFontSize) }
 }
 
 final class SessionTerminalDelegate: NSObject, TerminalViewDelegate {
