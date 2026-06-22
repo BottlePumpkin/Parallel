@@ -5,7 +5,8 @@ All notable changes to Parallel are documented here.
 
 ### Bug Fixes
 
-- **release:** Annotated tag + atomic rollback + not-behind preflight ([`6258dda`](https://github.com/BottlePumpkin/Parallel/commit/6258dda05bf49db4433b814af96c58eb6a046777))
+- **release:** Annotated tag + atomic rollback + not-behind preflight ([`65ba87e`](https://github.com/BottlePumpkin/Parallel/commit/65ba87e355fe23c2e4ec68f25a7566214e8ab54a))
+- **views:** Auto-focus terminal on worktree/tab switch (#10) ([`e5a107c`](https://github.com/BottlePumpkin/Parallel/commit/e5a107c4547ccca294afb6c264108223c6caf568))
 
 ### Features
 
