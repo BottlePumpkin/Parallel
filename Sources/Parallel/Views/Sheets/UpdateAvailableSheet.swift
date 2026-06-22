@@ -47,8 +47,10 @@ struct UpdateAvailableSheet: View {
                     checker.skip(info.latestVersion)
                     dismiss()
                 }
+                .disabled(isBusy)
                 Spacer()
                 Button("Later") { dismiss() }
+                    .disabled(isBusy)
                 if canUpdateInApp {
                     Button("Update Now") {
                         if case .replaceable(let url) = target {
@@ -68,6 +70,12 @@ struct UpdateAvailableSheet: View {
         }
         .padding(20)
         .frame(width: 540)
+        .interactiveDismissDisabled(isBusy)
+        .onDisappear {
+            // Clear a lingering .failed so the sheet doesn't reopen on the next
+            // check still showing a stale error. (Dismissal is blocked mid-update.)
+            if case .failed = updater.phase { updater.cancel() }
+        }
     }
 
     private var isBusy: Bool {

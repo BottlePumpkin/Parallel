@@ -49,6 +49,10 @@ final class Updater {
             phase = .failed("This release has no downloadable build attached.")
             return
         }
+        guard assetURL.scheme == "https" else {
+            phase = .failed("Refusing to download over an insecure (non-HTTPS) connection.")
+            return
+        }
         task?.cancel()
         task = Task { [weak self] in
             await self?.run(assetURL: assetURL,
