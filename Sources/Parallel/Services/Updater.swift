@@ -99,10 +99,14 @@ final class Updater {
             phase = .relaunching
             try relaunch(bundleURL: target)
             NSApp.terminate(nil)
-        } catch is CancellationError {
-            phase = .idle
         } catch {
-            phase = .failed((error as? UpdaterError)?.text ?? error.localizedDescription)
+            // URLSession.download throws URLError.cancelled (not CancellationError)
+            // when its Task is cancelled, so check both before reporting failure.
+            if Task.isCancelled || (error as? URLError)?.code == .cancelled || error is CancellationError {
+                phase = .idle
+            } else {
+                phase = .failed((error as? UpdaterError)?.text ?? error.localizedDescription)
+            }
         }
     }
 
