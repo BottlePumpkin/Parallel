@@ -43,6 +43,16 @@ final class ParallelTerminalView: TerminalView {
             guard let self else { return event }
             return self.suppressHoverMotion(event) ? nil : event
         }) { eventMonitors.append(m) }
+        // A left-drag bypasses mouse reporting so the user can select + ⌘C even
+        // while a program owns the mouse (issue #21), matching iTerm. Single
+        // clicks (no drag) still reach the program. Don't consume — let SwiftTerm
+        // handle the gesture, now on the native-selection path.
+        if let m = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDragged, handler: { [weak self] event in
+            self?.beginSelectionBypassIfNeeded(event); return event
+        }) { eventMonitors.append(m) }
+        if let m = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp, handler: { [weak self] event in
+            self?.endSelectionBypassIfNeeded(); return event
+        }) { eventMonitors.append(m) }
     }
 
     private func removeMonitors() {
@@ -50,16 +60,46 @@ final class ParallelTerminalView: TerminalView {
         eventMonitors.removeAll()
     }
 
+    /// True when the event targets this terminal while it is the visible one.
+    private func isOwnVisibleEvent(_ event: NSEvent) -> Bool {
+        guard !isHidden, let window, event.window === window else { return false }
+        return bounds.contains(convert(event.locationInWindow, from: nil))
+    }
+
     /// Returns true (consume) when this is the visible terminal under the pointer
     /// and the program's bare hover motion should be suppressed.
     private func suppressHoverMotion(_ event: NSEvent) -> Bool {
-        guard !isHidden, let window, event.window === window else { return false }
-        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { return false }
+        guard isOwnVisibleEvent(event) else { return false }
         return TerminalMouseMotion.shouldSuppressHover(
             mouseReportingEnabled: allowMouseReporting,
             mouseMode: getTerminal().mouseMode,
             commandActive: event.modifierFlags.contains(.command)
         )
+    }
+
+    // MARK: - Drag-to-select (issue #21)
+
+    private var selectionBypassActive = false
+
+    /// Once a left-drag begins, turn reporting off so SwiftTerm selects text
+    /// natively instead of forwarding the drag to the program. Idempotent: after
+    /// the first drag event reporting is already off, so later events no-op.
+    private func beginSelectionBypassIfNeeded(_ event: NSEvent) {
+        guard isOwnVisibleEvent(event) else { return }
+        guard TerminalSelectionBypass.shouldBypassReporting(
+            mouseReportingEnabled: allowMouseReporting,
+            mouseMode: getTerminal().mouseMode
+        ) else { return }
+        allowMouseReporting = false
+        selectionBypassActive = true
+    }
+
+    /// Restore reporting after SwiftTerm's own mouseUp runs, so it finalizes the
+    /// selection on the non-reporting path rather than forwarding a release.
+    private func endSelectionBypassIfNeeded() {
+        guard selectionBypassActive else { return }
+        selectionBypassActive = false
+        DispatchQueue.main.async { [weak self] in self?.allowMouseReporting = true }
     }
 
     /// Forward the wheel to the program if this is the visible terminal under the
