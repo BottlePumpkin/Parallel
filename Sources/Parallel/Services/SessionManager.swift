@@ -176,7 +176,7 @@ final class SessionManager {
         }
         AppLogger.session.info("start \(worktree.displayName, privacy: .public) pid=\(pty.pid)")
 
-        let view = TerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 500))
+        let view = ParallelTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 500))
         view.font = Self.terminalFont(size: terminalFontSize)
         // SwiftTerm's default scrollback is 500 lines and Buffer.resize
         // trims oldest rows whenever the grid shrinks. ZStack frame changes
@@ -462,6 +462,7 @@ final class SessionTerminalDelegate: NSObject, TerminalViewDelegate {
     init(pty: PTY) { self.pty = pty }
 
     func send(source: TerminalView, data: ArraySlice<UInt8>) {
+        if TerminalIODebug.isEnabled { TerminalIODebug.logOutgoing(Array(data)) }
         pty.write(Data(data))
     }
     func scrolled(source: TerminalView, position: Double) {}
