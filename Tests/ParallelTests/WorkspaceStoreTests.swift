@@ -86,4 +86,47 @@ final class WorkspaceStoreTests: XCTestCase {
         let bOrder = store.worktrees.filter { $0.repoId == repoB.id }.map(\.displayName)
         XCTAssertEqual(bOrder, ["b1"])
     }
+
+    private func seedRepos(_ store: WorkspaceStore, _ names: [String]) -> [Repo] {
+        let repos = names.map { Repo(root: URL(fileURLWithPath: "/tmp/\($0)"), displayName: $0) }
+        for r in repos { store.addRepo(r) }
+        return repos
+    }
+
+    func test_moveRepoBefore_reordersAndPersists() throws {
+        let store = WorkspaceStore(directory: tempDir)
+        let repos = seedRepos(store, ["A", "B", "C"])
+        // Move C before A → C, A, B
+        store.moveRepo(repos[2].id, before: repos[0].id)
+        XCTAssertEqual(store.repos.map(\.displayName), ["C", "A", "B"])
+
+        let reloaded = WorkspaceStore(directory: tempDir)
+        try reloaded.load()
+        XCTAssertEqual(reloaded.repos.map(\.displayName), ["C", "A", "B"])
+    }
+
+    func test_moveRepoBefore_sameId_isNoOp() {
+        let store = WorkspaceStore(directory: tempDir)
+        let repos = seedRepos(store, ["A", "B"])
+        store.moveRepo(repos[0].id, before: repos[0].id)
+        XCTAssertEqual(store.repos.map(\.displayName), ["A", "B"])
+    }
+
+    func test_moveRepoUp_movesAndClampsAtTop() {
+        let store = WorkspaceStore(directory: tempDir)
+        let repos = seedRepos(store, ["A", "B", "C"])
+        store.moveRepoUp(repos[2].id)            // C up → A, C, B
+        XCTAssertEqual(store.repos.map(\.displayName), ["A", "C", "B"])
+        store.moveRepoUp(repos[0].id)            // A already first → no-op
+        XCTAssertEqual(store.repos.map(\.displayName), ["A", "C", "B"])
+    }
+
+    func test_moveRepoDown_movesAndClampsAtBottom() {
+        let store = WorkspaceStore(directory: tempDir)
+        let repos = seedRepos(store, ["A", "B", "C"])
+        store.moveRepoDown(repos[0].id)          // A down → B, A, C
+        XCTAssertEqual(store.repos.map(\.displayName), ["B", "A", "C"])
+        store.moveRepoDown(repos[2].id)          // C already last → no-op
+        XCTAssertEqual(store.repos.map(\.displayName), ["B", "A", "C"])
+    }
 }
