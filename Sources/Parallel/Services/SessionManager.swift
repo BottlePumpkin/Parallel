@@ -462,6 +462,7 @@ final class SessionTerminalDelegate: NSObject, TerminalViewDelegate {
     init(pty: PTY) { self.pty = pty }
 
     func send(source: TerminalView, data: ArraySlice<UInt8>) {
+        if TerminalIODebug.isEnabled { TerminalIODebug.logOutgoing(Array(data)) }
         pty.write(Data(data))
     }
     func scrolled(source: TerminalView, position: Double) {}

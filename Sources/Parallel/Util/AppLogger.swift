@@ -12,6 +12,7 @@ enum AppLogger {
     static let worktree = Logger(subsystem: "com.byeonghopark.parallel", category: "worktree")
     static let session  = Logger(subsystem: "com.byeonghopark.parallel", category: "session")
     static let status   = Logger(subsystem: "com.byeonghopark.parallel", category: "status")
+    static let terminalIO = Logger(subsystem: "com.byeonghopark.parallel", category: "terminalIO")
 
     static func bootstrapFileLogging() {
         #if DEBUG
