@@ -240,6 +240,34 @@ final class WorkspaceStore {
         try? save()
     }
 
+    /// Move `sourceId` so it sits immediately before `targetId`.
+    /// Used by the header drag-and-drop reorder gesture, where SwiftUI's
+    /// `List(.sidebar)` doesn't expose section-level `.onMove`.
+    func moveRepo(_ sourceId: UUID, before targetId: UUID) {
+        guard sourceId != targetId,
+              let from = repos.firstIndex(where: { $0.id == sourceId }),
+              repos.contains(where: { $0.id == targetId }) else { return }
+        let item = repos.remove(at: from)
+        // Re-resolve the target index after removal so it stays valid.
+        let insertAt = repos.firstIndex(where: { $0.id == targetId }) ?? repos.count
+        repos.insert(item, at: insertAt)
+        try? save()
+    }
+
+    /// Move a repo group up one slot. No-op if already first or not found.
+    func moveRepoUp(_ repoId: UUID) {
+        guard let idx = repos.firstIndex(where: { $0.id == repoId }), idx > 0 else { return }
+        repos.move(fromOffsets: IndexSet(integer: idx), toOffset: idx - 1)
+        try? save()
+    }
+
+    /// Move a repo group down one slot. No-op if already last or not found.
+    func moveRepoDown(_ repoId: UUID) {
+        guard let idx = repos.firstIndex(where: { $0.id == repoId }), idx < repos.count - 1 else { return }
+        repos.move(fromOffsets: IndexSet(integer: idx), toOffset: idx + 2)
+        try? save()
+    }
+
     /// Reorder worktrees belonging to `repoId`. Indices are in the section's
     /// filtered view (as ForEach.onMove passes them); they're translated into
     /// the full `worktrees` array here so other repos' ordering is preserved.

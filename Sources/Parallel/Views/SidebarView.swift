@@ -53,6 +53,10 @@ struct SidebarView: View {
                     }
                 } header: {
                     HStack {
+                        Image(systemName: "line.3.horizontal")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .help("Drag to reorder repository")
                         Text(repo.displayName)
                         Spacer()
                         Menu {
@@ -66,7 +70,24 @@ struct SidebarView: View {
                         .fixedSize()
                         .help("Add worktree to \(repo.displayName)")
                     }
+                    .contentShape(Rectangle())
+                    .draggable(repo.id.uuidString) {
+                        // Drag preview.
+                        Label(repo.displayName, systemImage: "folder")
+                            .padding(6)
+                    }
+                    .dropDestination(for: String.self) { items, _ in
+                        guard let raw = items.first, let sourceId = UUID(uuidString: raw) else { return false }
+                        store.moveRepo(sourceId, before: repo.id)
+                        return true
+                    }
                     .contextMenu {
+                        let idx = store.repos.firstIndex(where: { $0.id == repo.id })
+                        Button("Move Up") { store.moveRepoUp(repo.id) }
+                            .disabled(idx == nil || idx == 0)
+                        Button("Move Down") { store.moveRepoDown(repo.id) }
+                            .disabled(idx == nil || idx == store.repos.count - 1)
+                        Divider()
                         Button("Remove Repository from Parallel", role: .destructive) {
                             actions.removeRepo(repo.id)
                         }
