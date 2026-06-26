@@ -17,32 +17,49 @@ import SwiftTerm
 /// `TerminalMouseScroll` policy; this layer is thin AppKit glue.
 final class ParallelTerminalView: TerminalView {
 
-    private var scrollMonitor: Any?
+    private var eventMonitors: [Any] = []
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window != nil {
-            installScrollMonitorIfNeeded()
+            installMonitorsIfNeeded()
         } else {
-            removeScrollMonitor()
+            removeMonitors()
         }
     }
 
-    deinit { removeScrollMonitor() }
+    deinit { removeMonitors() }
 
-    private func installScrollMonitorIfNeeded() {
-        guard scrollMonitor == nil else { return }
-        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+    private func installMonitorsIfNeeded() {
+        guard eventMonitors.isEmpty else { return }
+        // Forward the wheel to mouse-tracking programs (they own scrolling).
+        if let m = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel, handler: { [weak self] event in
             guard let self else { return event }
             return self.forwardWheelIfNeeded(event) ? nil : event
-        }
+        }) { eventMonitors.append(m) }
+        // Drop bare hover motion that SwiftTerm mis-reports as a left-drag,
+        // which a TUI (Claude) reacts to by highlighting the block on hover.
+        if let m = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved, handler: { [weak self] event in
+            guard let self else { return event }
+            return self.suppressHoverMotion(event) ? nil : event
+        }) { eventMonitors.append(m) }
     }
 
-    private func removeScrollMonitor() {
-        if let monitor = scrollMonitor {
-            NSEvent.removeMonitor(monitor)
-            scrollMonitor = nil
-        }
+    private func removeMonitors() {
+        eventMonitors.forEach { NSEvent.removeMonitor($0) }
+        eventMonitors.removeAll()
+    }
+
+    /// Returns true (consume) when this is the visible terminal under the pointer
+    /// and the program's bare hover motion should be suppressed.
+    private func suppressHoverMotion(_ event: NSEvent) -> Bool {
+        guard !isHidden, let window, event.window === window else { return false }
+        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { return false }
+        return TerminalMouseMotion.shouldSuppressHover(
+            mouseReportingEnabled: allowMouseReporting,
+            mouseMode: getTerminal().mouseMode,
+            commandActive: event.modifierFlags.contains(.command)
+        )
     }
 
     /// Forward the wheel to the program if this is the visible terminal under the
