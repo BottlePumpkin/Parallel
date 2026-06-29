@@ -21,6 +21,17 @@ extension XCTestCase {
         XCTAssertEqual(element.value as? String, expected)
     }
 
+    /// Poll an element's `.value` until it contains `substring`, then assert.
+    func expectValue(_ element: XCUIElement, toContain substring: String, timeout: TimeInterval) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if (element.value as? String)?.contains(substring) == true { return }
+            usleep(200_000)
+        }
+        XCTAssertTrue((element.value as? String)?.contains(substring) == true,
+                      "expected value to contain '\(substring)', got: \(String(describing: element.value))")
+    }
+
     /// Wait until an element no longer exists.
     func waitForDisappearance(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
         let predicate = NSPredicate(format: "exists == false")

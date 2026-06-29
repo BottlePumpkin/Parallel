@@ -176,7 +176,7 @@ final class SessionManager {
         }
         AppLogger.session.info("start \(worktree.displayName, privacy: .public) pid=\(pty.pid)")
 
-        let view = TerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 500))
+        let view = ParallelTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 500))
         view.font = Self.terminalFont(size: terminalFontSize)
         // SwiftTerm's default scrollback is 500 lines and Buffer.resize
         // trims oldest rows whenever the grid shrinks. ZStack frame changes
@@ -186,6 +186,11 @@ final class SessionManager {
         view.getTerminal().changeScrollback(10_000)
         let delegate = SessionTerminalDelegate(pty: pty)
         view.terminalDelegate = delegate
+        if TestMode.isE2EMouse() {
+            // Simulate Claude turning on alt-screen-style any-event SGR mouse
+            // tracking, so UI tests can drive wheel/hover/drag behavior.
+            view.feed(byteArray: ArraySlice(Array("\u{1b}[?1006h\u{1b}[?1003h".utf8)))
+        }
 
         let session = Session(worktreeId: worktree.id, pid: pty.pid)
         let entry = SessionEntry(
@@ -462,6 +467,8 @@ final class SessionTerminalDelegate: NSObject, TerminalViewDelegate {
     init(pty: PTY) { self.pty = pty }
 
     func send(source: TerminalView, data: ArraySlice<UInt8>) {
+        if TerminalIODebug.isEnabled { TerminalIODebug.logOutgoing(Array(data)) }
+        if E2ETerminalProbe.enabled { E2ETerminalProbe.record(Array(data)) }
         pty.write(Data(data))
     }
     func scrolled(source: TerminalView, position: Double) {}

@@ -7,6 +7,13 @@ enum TestMode {
         env["PARALLEL_E2E"] == "1"
     }
 
+    /// Puts new terminals into any-event SGR mouse tracking at startup (as Claude
+    /// would) so UI tests can exercise the wheel/hover/drag behavior without a
+    /// real mouse-mode program. Also turns on outgoing mouse-report capture.
+    static func isE2EMouse(_ env: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
+        env["PARALLEL_E2E_MOUSE"] == "1"
+    }
+
     /// Overrides WorkspaceStore's support directory so tests never touch the
     /// user's real ~/Library/Application Support/Parallel.
     static func supportDirectory(_ env: [String: String] = ProcessInfo.processInfo.environment) -> URL? {
