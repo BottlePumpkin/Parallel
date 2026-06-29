@@ -1,6 +1,13 @@
 # Changelog
 
 All notable changes to Parallel are documented here.
+## [v0.4.1](https://github.com/BottlePumpkin/Parallel/compare/v0.4.0...v0.4.1) (2026-06-29)
+
+### Bug Fixes
+
+- **terminal:** Drag to select + copy in mouse-tracking TUIs (#21) ([`8121133`](https://github.com/BottlePumpkin/Parallel/commit/8121133372af9b3e8925d24209d757389facbb6e))
+- **terminal:** Stop hover highlighting blocks in mouse-tracking TUIs ([`52a3157`](https://github.com/BottlePumpkin/Parallel/commit/52a31573e6ce6d0778a28da038050fff7e46a224))
+- **terminal:** Forward scroll wheel to mouse-tracking apps (e.g. Claude) ([`74f729d`](https://github.com/BottlePumpkin/Parallel/commit/74f729d27195f1a646a4f02a79fbabe5eb200aef))
 ## [v0.4.0](https://github.com/BottlePumpkin/Parallel/compare/v0.3.0...v0.4.0) (2026-06-22)
 
 ### Bug Fixes
