@@ -15,6 +15,10 @@ struct E2EProbeView: View {
     /// state instead of typing into the pane — the latter can hang XCUITest
     /// indefinitely when nothing accepts the keystrokes.
     @State private var terminalHasFocus = false
+    /// Mouse/control reports the active terminal forwarded (e2e mouse mode only).
+    @State private var mouseReports = ""
+    /// Whether the active terminal currently has a text selection.
+    @State private var selectionActive = false
     private let focusPoll = Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -32,13 +36,27 @@ struct E2EProbeView: View {
             Text("fs")
                 .accessibilityIdentifier("e2e.terminalFontSize")
                 .accessibilityValue("\(Int(sessionManager.terminalFontSize))")
+            Text("mr")
+                .accessibilityIdentifier("e2e.mouseReports")
+                .accessibilityValue(mouseReports)
+            Text("sel")
+                .accessibilityIdentifier("e2e.selectionActive")
+                .accessibilityValue(selectionActive ? "1" : "0")
         }
         .frame(width: 1, height: 1)
         .opacity(0.01)
         .allowsHitTesting(false)
         .onReceive(focusPoll) { _ in
             terminalHasFocus = Self.aTerminalIsFirstResponder()
+            mouseReports = E2ETerminalProbe.reports
+            selectionActive = Self.activeSelectionActive(sessionManager, selectedWorktreeId)
         }
+    }
+
+    /// Whether the active worktree's terminal currently has a selection.
+    private static func activeSelectionActive(_ sm: SessionManager, _ worktreeId: UUID?) -> Bool {
+        guard let worktreeId, let entry = sm.activeSession(for: worktreeId) else { return false }
+        return entry.terminalView.selectionActive
     }
 
     /// True when the key window's first responder is a SwiftTerm `TerminalView`

@@ -60,10 +60,17 @@ final class ParallelTerminalView: TerminalView {
         eventMonitors.removeAll()
     }
 
+    /// The event location in this view's coordinates if this is the visible
+    /// terminal under the pointer; nil otherwise.
+    private func pointInSelfIfVisible(_ event: NSEvent) -> CGPoint? {
+        guard !isHidden, let window, event.window === window else { return nil }
+        let point = convert(event.locationInWindow, from: nil)
+        return bounds.contains(point) ? point : nil
+    }
+
     /// True when the event targets this terminal while it is the visible one.
     private func isOwnVisibleEvent(_ event: NSEvent) -> Bool {
-        guard !isHidden, let window, event.window === window else { return false }
-        return bounds.contains(convert(event.locationInWindow, from: nil))
+        pointInSelfIfVisible(event) != nil
     }
 
     /// Returns true (consume) when this is the visible terminal under the pointer
@@ -105,9 +112,7 @@ final class ParallelTerminalView: TerminalView {
     /// Forward the wheel to the program if this is the visible terminal under the
     /// pointer and mouse reporting is on. Returns true when consumed.
     private func forwardWheelIfNeeded(_ event: NSEvent) -> Bool {
-        guard !isHidden, let window, event.window === window else { return false }
-        let pointInView = convert(event.locationInWindow, from: nil)
-        guard bounds.contains(pointInView) else { return false }
+        guard let pointInView = pointInSelfIfVisible(event) else { return false }
 
         let term = getTerminal()
         guard TerminalMouseScroll.shouldForwardToApp(

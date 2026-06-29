@@ -93,10 +93,13 @@ struct E2EFixture {
 
 extension XCUIApplication {
     /// Launch the app in hermetic e2e mode pointed at this fixture.
-    func launchE2E(fixture: E2EFixture) {
+    /// Pass `mouseMode: true` to start terminals in any-event SGR mouse tracking
+    /// (as Claude does) so mouse-behavior tests can drive wheel/hover/drag.
+    func launchE2E(fixture: E2EFixture, mouseMode: Bool = false) {
         launchEnvironment["PARALLEL_E2E"] = "1"
         launchEnvironment["PARALLEL_SUPPORT_DIR"] = fixture.supportDir.path
         launchEnvironment["PARALLEL_E2E_SEED"] = fixture.seedFile.path
+        if mouseMode { launchEnvironment["PARALLEL_E2E_MOUSE"] = "1" }
         launch()
     }
 }
