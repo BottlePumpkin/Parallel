@@ -102,7 +102,16 @@ final class Updater {
 
             phase = .relaunching
             try relaunch(bundleURL: target)
+            // The relaunch helper waits for THIS process to exit, then opens the
+            // new bundle. NSApp.terminate(nil) can be deferred or no-op while the
+            // update sheet is presented (and called from inside this Task), which
+            // left the helper waiting forever: the app appeared stuck and only
+            // came back after a force-quit. Ask AppKit to terminate (so the
+            // willTerminate cleanup runs), then guarantee the exit so the helper
+            // fires promptly. If terminate succeeds, the process is already gone
+            // before this fallback runs.
             NSApp.terminate(nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { exit(0) }
         } catch {
             // URLSession.download throws URLError.cancelled (not CancellationError)
             // when its Task is cancelled, so check both before reporting failure.
