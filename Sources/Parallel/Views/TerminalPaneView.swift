@@ -153,6 +153,7 @@ struct TerminalPaneView: View {
             ForEach(sessionManager.allRunningSessions, id: \.session.id) { entry in
                 MountedTerminalView(
                     terminalView: entry.terminalView,
+                    pty: entry.pty,
                     isVisible: entry.session.id == currentSessionId
                 )
             }
@@ -216,12 +217,14 @@ struct TerminalPaneView: View {
 /// level so inactive tabs don't grab mouse events.
 ///
 /// When a hidden view becomes visible again we resync its frame with the
-/// current superview bounds and ask AppKit for a layout + display pass.
-/// SwiftTerm caches its grid size from `setFrameSize`, and the cached value
-/// gets out of date while the view is hidden — leading to stale scrollback
-/// and occasional blank panes after worktree/tab switches.
+/// current superview bounds, ask AppKit for a layout + display pass, and
+/// re-emit the terminal's size to the PTY (a forced SIGWINCH). SwiftTerm
+/// caches its grid size from `setFrameSize`, and the cached value gets out of
+/// date while the view is hidden — leading to stale scrollback and blank panes
+/// after worktree/tab switches.
 struct MountedTerminalView: NSViewRepresentable {
     let terminalView: TerminalView
+    let pty: PTY
     let isVisible: Bool
 
     /// Whether a terminal whose visibility just changed should grab keyboard
@@ -230,6 +233,15 @@ struct MountedTerminalView: NSViewRepresentable {
     /// while it stays in the same visibility state. Keeping this pure makes
     /// the focus contract testable without an AppKit window.
     static func shouldTakeFocus(wasHidden: Bool, isVisible: Bool) -> Bool {
+        wasHidden && isVisible
+    }
+
+    /// Whether a terminal whose visibility just changed should be told to
+    /// repaint. A hidden→visible transition (worktree/tab switch) is the only
+    /// case: the program may have been left mid-reflow while hidden and needs a
+    /// fresh SIGWINCH to redraw. Same trigger as focus; kept separate so the
+    /// repaint contract is independently testable.
+    static func shouldRefreshProgram(wasHidden: Bool, isVisible: Bool) -> Bool {
         wasHidden && isVisible
     }
 
@@ -252,7 +264,35 @@ struct MountedTerminalView: NSViewRepresentable {
         }
         nsView.needsLayout = true
         nsView.needsDisplay = true
+        if Self.shouldRefreshProgram(wasHidden: wasHidden, isVisible: isVisible) {
+            refreshProgramWhenReady(nsView)
+        }
         focusWhenReady(nsView)
+    }
+
+    /// After a hidden→visible transition, re-emit the terminal's current grid
+    /// size to the PTY so the foreground program repaints.
+    ///
+    /// `needsDisplay` only repaints SwiftTerm's own buffer; a full-screen TUI on
+    /// the alternate screen (Claude Code, vim, less, …) repaints only on
+    /// SIGWINCH. The alt-screen has no scrollback — it is exactly grid-sized —
+    /// so a transient grid shrink during a worktree/tab switch blanks rows that
+    /// only the program can refill. Switching back already sets `needsDisplay`,
+    /// yet the pane stays blank until a manual window resize; the missing signal
+    /// is the SIGWINCH a real resize delivers, not a pixel invalidation. Resend
+    /// the winsize to reproduce that cure deterministically.
+    ///
+    /// Deferred a runloop tick so it lands after the layout pass settles the
+    /// grid; dropped if a rapid follow-up switch re-hid the view or it is not
+    /// yet in a window.
+    private func refreshProgramWhenReady(_ view: TerminalView) {
+        DispatchQueue.main.async { [weak view, pty] in
+            guard let view, !view.isHidden, view.window != nil else { return }
+            let term = view.getTerminal()
+            let cols = term.cols, rows = term.rows
+            guard cols > 0, rows > 0 else { return }
+            pty.resize(cols: Int32(cols), rows: Int32(rows))
+        }
     }
 
     /// Move keyboard focus to the terminal so the user can type immediately
