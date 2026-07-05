@@ -24,4 +24,29 @@ final class TerminalFocusTests: XCTestCase {
     func test_shouldTakeFocus_notWhenStayingHidden() {
         XCTAssertFalse(MountedTerminalView.shouldTakeFocus(wasHidden: false, isVisible: false))
     }
+
+    // MARK: - shouldRefreshProgram (force SIGWINCH repaint on switch — issue #24)
+    //
+    // A becoming-visible terminal re-emits its grid size to the PTY so a
+    // full-screen TUI (Claude Code) repaints. needsDisplay alone leaves the
+    // alt-screen blank after a worktree/tab switch; only a SIGWINCH fixes it.
+    // The trigger must match focus: a hidden→visible transition ONLY — never
+    // while staying visible, becoming hidden, or staying hidden (which would
+    // spam redundant SIGWINCHes).
+
+    func test_shouldRefreshProgram_whenBecomingVisible() {
+        XCTAssertTrue(MountedTerminalView.shouldRefreshProgram(wasHidden: true, isVisible: true))
+    }
+
+    func test_shouldRefreshProgram_notWhenAlreadyVisible() {
+        XCTAssertFalse(MountedTerminalView.shouldRefreshProgram(wasHidden: false, isVisible: true))
+    }
+
+    func test_shouldRefreshProgram_notWhenBecomingHidden() {
+        XCTAssertFalse(MountedTerminalView.shouldRefreshProgram(wasHidden: true, isVisible: false))
+    }
+
+    func test_shouldRefreshProgram_notWhenStayingHidden() {
+        XCTAssertFalse(MountedTerminalView.shouldRefreshProgram(wasHidden: false, isVisible: false))
+    }
 }
