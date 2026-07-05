@@ -1,6 +1,15 @@
 # Changelog
 
 All notable changes to Parallel are documented here.
+## [v0.4.2](https://github.com/BottlePumpkin/Parallel/compare/v0.4.1...v0.4.2) (2026-07-05)
+
+### Bug Fixes
+
+- **updater:** Guarantee exit after update so relaunch isn't stuck ([`99d2345`](https://github.com/BottlePumpkin/Parallel/commit/99d234558ab0da80b9cfec33d317db0a2dca0a34))
+
+### Features
+
+- Repository reordering via header drag + context menu ([`670e499`](https://github.com/BottlePumpkin/Parallel/commit/670e499fee0545617e5f5860047688eb80e267cc))
 ## [v0.4.1](https://github.com/BottlePumpkin/Parallel/compare/v0.4.0...v0.4.1) (2026-06-29)
 
 ### Bug Fixes
