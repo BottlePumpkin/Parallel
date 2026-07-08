@@ -189,8 +189,13 @@ struct ContentView: View {
             decreaseFontSize: { sessionManager.decreaseFontSize() },
             resetFontSize:    { sessionManager.resetFontSize() },
             closeCurrentSession: {
-                if let id = selectedWorktreeId {
-                    sessionManager.terminate(worktreeId: id)
+                // ⌘W closes only the active shell tab — not the whole worktree
+                // (issue #19). Terminating the last tab leaves the worktree on
+                // its "No tabs / Open Tab" placeholder; a real resume is one
+                // click away. No active session → no-op.
+                if let id = selectedWorktreeId,
+                   let sid = sessionManager.activeSession(for: id)?.session.id {
+                    sessionManager.terminate(sessionId: sid)
                 }
             },
             deleteCurrentWorktree: {
