@@ -1,8 +1,22 @@
 import SwiftUI
 import AppKit
 
+/// Strips AppKit's standard ⌘W window-close after the menu bar is built so ⌘W
+/// maps only to Worktree ▸ "Close Session" (issue #19).
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // SwiftUI builds the menu bar during/after launch; defer a runloop tick
+        // so the standard File ▸ Close item exists before we clear its ⌘W.
+        DispatchQueue.main.async {
+            AppMenuConfigurator.stripDefaultCloseShortcut(in: NSApp.mainMenu)
+        }
+    }
+}
+
 @main
 struct ParallelApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     init() {
         AppLogger.bootstrapFileLogging()
         // SwiftPM bare-executable launches don't set the activation policy,
