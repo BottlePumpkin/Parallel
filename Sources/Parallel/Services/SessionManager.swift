@@ -333,8 +333,10 @@ final class SessionManager {
     /// next tab in the strip (or previous if it was the last).
     func terminate(sessionId: UUID) {
         dispatchPrecondition(condition: .onQueue(.main))
-        userClosingSessions.insert(sessionId)
         guard let entry = sessionsById[sessionId] else { return }
+        // Mark as user-initiated so the resulting PTY EOF → markExited stays silent
+        // (issue #12). After the existence guard so a stale id never lingers.
+        userClosingSessions.insert(sessionId)
         let worktreeId = entry.session.worktreeId
         AppLogger.session.info("terminate session=\(sessionId, privacy: .public) pid=\(entry.pty.pid)")
         entry.pty.terminate()
