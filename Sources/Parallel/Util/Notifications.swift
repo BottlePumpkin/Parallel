@@ -1,19 +1,17 @@
 import Foundation
 import UserNotifications
 
-enum Notifications {
-    /// `UNUserNotificationCenter.current()` requires the process to have a
-    /// main bundle with a CFBundleIdentifier — true when running from a
-    /// `.app`, but not when launched as a SwiftPM bare executable via
-    /// `swift run`. Calling it without a bundle raises an Obj-C exception
-    /// that Swift can't catch, so we check first and silently disable
-    /// notifications in that environment.
-    private static var isInBundle: Bool {
-        Bundle.main.bundleIdentifier != nil
+/// Pure banner-suppression policy (issue #12), unit-testable without AppKit.
+enum NotificationBanner {
+    /// Show a banner unless the belling session is visible and the app is active.
+    static func shouldBanner(appActive: Bool, sessionVisible: Bool) -> Bool {
+        !(appActive && sessionVisible)
     }
+}
 
-    /// Ask once for permission to post notifications. Safe to call repeatedly.
-    /// No-op when not running inside an .app bundle.
+enum Notifications {
+    private static var isInBundle: Bool { Bundle.main.bundleIdentifier != nil }
+
     static func requestPermission() {
         guard isInBundle else {
             AppLogger.app.info("notifications disabled (no bundle — run from a .app to enable)")
@@ -28,24 +26,60 @@ enum Notifications {
         }
     }
 
-    /// Post a notification that a worktree's shell session exited.
-    /// No-op when not running inside an .app bundle.
-    static func sessionEnded(worktreeName: String, branch: String, tabLabel: String) {
+    /// A session finished its turn and is waiting for input.
+    static func sessionNeedsAttention(worktreeId: UUID, sessionId: UUID,
+                                      worktreeName: String, branch: String, tabLabel: String) {
+        post(title: "Waiting for you", worktreeId: worktreeId, sessionId: sessionId,
+             worktreeName: worktreeName, branch: branch, tabLabel: tabLabel)
+    }
+
+    /// A shell session exited on its own.
+    static func sessionEnded(worktreeId: UUID, sessionId: UUID,
+                             worktreeName: String, branch: String, tabLabel: String) {
+        post(title: "Session ended", worktreeId: worktreeId, sessionId: sessionId,
+             worktreeName: worktreeName, branch: branch, tabLabel: tabLabel)
+    }
+
+    private static func post(title: String, worktreeId: UUID, sessionId: UUID,
+                             worktreeName: String, branch: String, tabLabel: String) {
         guard isInBundle else { return }
         let content = UNMutableNotificationContent()
-        content.title = "Session ended"
+        content.title = title
         content.subtitle = worktreeName
         content.body = "\(tabLabel) · \(branch)"
         content.sound = .default
-        let req = UNNotificationRequest(
-            identifier: UUID().uuidString,
-            content: content,
-            trigger: nil
-        )
+        content.userInfo = ["worktreeId": worktreeId.uuidString, "sessionId": sessionId.uuidString]
+        let req = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(req) { error in
             if let error {
                 AppLogger.app.error("notify post failed: \(error.localizedDescription, privacy: .public)")
             }
         }
+    }
+}
+
+/// Routes banner interactions back into the app (issue #12): shows banners even
+/// while the app is frontmost (we already decided to post), and on click sets the
+/// store's navigation target so ContentView jumps to that session.
+final class NotificationCenterDelegate: NSObject, UNUserNotificationCenterDelegate {
+    weak var store: NotificationStore?
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound])
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        let info = response.notification.request.content.userInfo
+        if let w = info["worktreeId"] as? String, let wid = UUID(uuidString: w),
+           let s = info["sessionId"] as? String, let sid = UUID(uuidString: s) {
+            Task { @MainActor in
+                self.store?.navigationTarget = NavigationTarget(worktreeId: wid, sessionId: sid)
+            }
+        }
+        completionHandler()
     }
 }
