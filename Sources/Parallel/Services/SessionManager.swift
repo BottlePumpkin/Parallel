@@ -60,6 +60,16 @@ final class SessionManager {
     /// here is fine since they share the app's lifetime).
     var store: WorkspaceStore?
 
+    /// In-app notification sink (issue #12). Injected by ParallelApp.
+    var notificationStore: NotificationStore?
+    /// The worktree currently shown in the detail pane (kept in sync by ContentView).
+    /// Used to decide whether a belling session is "visible" (banner suppression).
+    var visibleWorktreeId: UUID?
+    /// Sessions the user is closing on purpose (⌘W) — their PTY EOF must not notify.
+    private var userClosingSessions: Set<UUID> = []
+    /// True while the app is tearing down; suppresses the session-ended cascade's notifications.
+    private var isTerminating = false
+
     /// Current terminal point size, applied to every live `TerminalView`.
     /// Seeded from the persisted value (falling back to `defaultFontSize`) and
     /// updated by the ⌘+ / ⌘- / ⌘0 commands. `@Observable` so the e2e probe and
@@ -205,6 +215,9 @@ final class SessionManager {
         )
 
         let sessionId = session.id
+        delegate.onBell = { [weak self] in
+            DispatchQueue.main.async { self?.handleBell(sessionId: sessionId) }
+        }
         // Coalesce PTY output: high-throughput producers (iOS builds) emit
         // megabytes that would otherwise flood the main queue with one
         // `feed` block per read chunk, saturating the main thread and
@@ -320,6 +333,7 @@ final class SessionManager {
     /// next tab in the strip (or previous if it was the last).
     func terminate(sessionId: UUID) {
         dispatchPrecondition(condition: .onQueue(.main))
+        userClosingSessions.insert(sessionId)
         guard let entry = sessionsById[sessionId] else { return }
         let worktreeId = entry.session.worktreeId
         AppLogger.session.info("terminate session=\(sessionId, privacy: .public) pid=\(entry.pty.pid)")
@@ -358,6 +372,68 @@ final class SessionManager {
         let ids = orderByWorktree[worktreeId] ?? []
         for sid in ids {
             terminate(sessionId: sid)
+        }
+    }
+
+    /// Make `sessionId` the active tab of its worktree (issue #12 navigation).
+    /// No-op if the session no longer exists.
+    func activate(sessionId: UUID) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard let e = sessionsById[sessionId] else { return }
+        activeByWorktree[e.session.worktreeId] = sessionId
+    }
+
+    /// Called before the app-quit teardown so the session-ended cascade stays silent.
+    func beginTermination() {
+        dispatchPrecondition(condition: .onQueue(.main))
+        isTerminating = true
+    }
+
+    /// A debounced bell fired for `sessionId` — record + maybe banner.
+    @MainActor
+    func handleBell(sessionId: UUID) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard let e = sessionsById[sessionId] else { return }
+        let idx = (orderByWorktree[e.session.worktreeId] ?? []).firstIndex(of: sessionId).map { $0 + 1 } ?? 1
+        postNotification(entry: e, kind: .needsAttention, tabLabel: e.label ?? "shell \(idx)")
+    }
+
+    /// Build an AppNotification, append it, and post a banner unless the session
+    /// is visible and the app active. Shared by bells and session-ended.
+    @MainActor
+    private func postNotification(entry e: SessionEntry, kind: AppNotification.Kind, tabLabel: String) {
+        let visibleSid = visibleWorktreeId.flatMap { activeSession(for: $0)?.session.id }
+        let sessionVisible = (e.session.id == visibleSid)
+        let appActive = NSApp.isActive
+        let note = AppNotification(
+            kind: kind,
+            worktreeId: e.session.worktreeId,
+            sessionId: e.session.id,
+            worktreeName: e.worktreeDisplayName,
+            branch: e.worktreeBranch,
+            tabLabel: tabLabel,
+            isRead: appActive && sessionVisible
+        )
+        notificationStore?.add(note)
+        guard NotificationBanner.shouldBanner(appActive: appActive, sessionVisible: sessionVisible) else { return }
+        switch kind {
+        case .needsAttention:
+            Notifications.sessionNeedsAttention(worktreeId: e.session.worktreeId, sessionId: e.session.id,
+                                                worktreeName: e.worktreeDisplayName, branch: e.worktreeBranch, tabLabel: tabLabel)
+        case .sessionEnded:
+            Notifications.sessionEnded(worktreeId: e.session.worktreeId, sessionId: e.session.id,
+                                       worktreeName: e.worktreeDisplayName, branch: e.worktreeBranch, tabLabel: tabLabel)
+        }
+    }
+
+    /// E2E-only: feed a raw BEL to every running session that is NOT visible, so a
+    /// UI test can exercise the real bell → delegate → store path deterministically.
+    func e2eEmitBellInBackground() {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard TestMode.isE2E() else { return }
+        let visibleSid = visibleWorktreeId.flatMap { activeSession(for: $0)?.session.id }
+        for entry in allRunningSessions where entry.session.id != visibleSid {
+            entry.terminalView.feed(byteArray: ArraySlice([0x07]))
         }
     }
 
@@ -404,6 +480,7 @@ final class SessionManager {
 
     // MARK: - Private
 
+    @MainActor
     private func markExited(sessionId: UUID) {
         dispatchPrecondition(condition: .onQueue(.main))
         // KNOWN LIMITATION: PTY's onEOF callback does not currently carry the
@@ -417,11 +494,9 @@ final class SessionManager {
         let tabIndex = (orderByWorktree[e.session.worktreeId] ?? [])
             .firstIndex(of: sessionId)
             .map { $0 + 1 } ?? 1
-        Notifications.sessionEnded(
-            worktreeName: e.worktreeDisplayName,
-            branch: e.worktreeBranch,
-            tabLabel: "shell \(tabIndex)"
-        )
+        let userClosed = userClosingSessions.remove(sessionId) != nil
+        if isTerminating || userClosed { return }
+        postNotification(entry: e, kind: .sessionEnded, tabLabel: "shell \(tabIndex)")
     }
 
     private func flushSetupCommands(sessionId: UUID) {
@@ -464,6 +539,8 @@ final class SessionManager {
 
 final class SessionTerminalDelegate: NSObject, TerminalViewDelegate {
     let pty: PTY
+    var onBell: () -> Void = {}
+    private var bellDebouncer = BellDebouncer()
     init(pty: PTY) { self.pty = pty }
 
     func send(source: TerminalView, data: ArraySlice<UInt8>) {
@@ -478,7 +555,9 @@ final class SessionTerminalDelegate: NSObject, TerminalViewDelegate {
         pty.resize(cols: Int32(newCols), rows: Int32(newRows))
     }
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
-    func bell(source: TerminalView) {}
+    func bell(source: TerminalView) {
+        if bellDebouncer.shouldFire(now: ProcessInfo.processInfo.systemUptime) { onBell() }
+    }
     func clipboardCopy(source: TerminalView, content: Data) {}
     func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
     func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {}

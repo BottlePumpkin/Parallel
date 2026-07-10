@@ -46,4 +46,14 @@ final class NotificationStoreTests: XCTestCase {
         s.add(n)
         XCTAssertEqual(s.unreadCount, 0)
     }
+
+    func test_isReadFlagMatchesBannerPolicy() {
+        // postNotification sets isRead = appActive && sessionVisible; the store must
+        // honour a pre-read entry (no unread badge for something you're looking at).
+        let s = NotificationStore()
+        var read = note("a"); read.isRead = true
+        s.add(read)
+        s.add(note("b"))
+        XCTAssertEqual(s.unreadCount, 1)
+    }
 }
