@@ -10,7 +10,14 @@ enum NotificationBanner {
 }
 
 enum Notifications {
-    private static var isInBundle: Bool { Bundle.main.bundleIdentifier != nil }
+    /// `UNUserNotificationCenter.current()` raises an uncatchable Obj-C exception
+    /// unless the process is a real `.app` bundle — true for the shipped app, but
+    /// NOT for a SwiftPM bare executable (`swift run`) nor the xctest runner
+    /// (whose bundle id is non-nil but whose bundle is not an `.app`). Require the
+    /// `.app` extension so notifications silently no-op in both non-app contexts.
+    private static var isInBundle: Bool {
+        Bundle.main.bundleIdentifier != nil && Bundle.main.bundleURL.pathExtension == "app"
+    }
 
     static func requestPermission() {
         guard isInBundle else {

@@ -25,34 +25,41 @@ struct E2EProbeView: View {
     var body: some View {
         let count = sessionManager.allRunningSessions.count
         VStack(spacing: 0) {
-            Text("rsc")
-                .accessibilityIdentifier("e2e.runningSessionCount")
-                .accessibilityValue("\(count)")
-            Text("awt")
-                .accessibilityIdentifier("e2e.activeWorktreeId")
-                .accessibilityValue(selectedWorktreeId?.uuidString ?? "")
-            Text("trf")
-                .accessibilityIdentifier("e2e.terminalHasFocus")
-                .accessibilityValue(terminalHasFocus ? "1" : "0")
-            Text("fs")
-                .accessibilityIdentifier("e2e.terminalFontSize")
-                .accessibilityValue("\(Int(sessionManager.terminalFontSize))")
-            Text("mr")
-                .accessibilityIdentifier("e2e.mouseReports")
-                .accessibilityValue(mouseReports)
-            Text("sel")
-                .accessibilityIdentifier("e2e.selectionActive")
-                .accessibilityValue(selectionActive ? "1" : "0")
-            Text("unread")
-                .accessibilityIdentifier("e2e.unreadNotificationCount")
-                .accessibilityValue("\(notificationStore.unreadCount)")
+            // Read-only probes: never intercept user input. `.allowsHitTesting(false)`
+            // must sit on THIS subtree only — a parent's false disables the whole
+            // branch and a child's true cannot re-enable it, which would make the
+            // emitBell button below unclickable (issue #12).
+            VStack(spacing: 0) {
+                Text("rsc")
+                    .accessibilityIdentifier("e2e.runningSessionCount")
+                    .accessibilityValue("\(count)")
+                Text("awt")
+                    .accessibilityIdentifier("e2e.activeWorktreeId")
+                    .accessibilityValue(selectedWorktreeId?.uuidString ?? "")
+                Text("trf")
+                    .accessibilityIdentifier("e2e.terminalHasFocus")
+                    .accessibilityValue(terminalHasFocus ? "1" : "0")
+                Text("fs")
+                    .accessibilityIdentifier("e2e.terminalFontSize")
+                    .accessibilityValue("\(Int(sessionManager.terminalFontSize))")
+                Text("mr")
+                    .accessibilityIdentifier("e2e.mouseReports")
+                    .accessibilityValue(mouseReports)
+                Text("sel")
+                    .accessibilityIdentifier("e2e.selectionActive")
+                    .accessibilityValue(selectionActive ? "1" : "0")
+                Text("unread")
+                    .accessibilityIdentifier("e2e.unreadNotificationCount")
+                    .accessibilityValue("\(notificationStore.unreadCount)")
+            }
+            .allowsHitTesting(false)
+
+            // Hittable e2e affordance — must NOT be under allowsHitTesting(false).
             Button("emitBell") { sessionManager.e2eEmitBellInBackground() }
                 .accessibilityIdentifier("e2e.emitBackgroundBell")
-                .allowsHitTesting(true)
         }
         .frame(width: 1, height: 1)
         .opacity(0.01)
-        .allowsHitTesting(false)
         .onReceive(focusPoll) { _ in
             terminalHasFocus = Self.aTerminalIsFirstResponder()
             mouseReports = E2ETerminalProbe.reports
