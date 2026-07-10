@@ -15,7 +15,9 @@ struct ContentView: View {
     @Environment(SessionManager.self) private var sessionManager
     @Environment(CaffeinateManager.self) private var caffeinate
     @Environment(UpdateChecker.self) private var updateChecker
+    @Environment(NotificationStore.self) private var notificationStore
     @State private var selectedWorktreeId: UUID?
+    @State private var showNotifications = false
     @State private var showAddRepo = false
     @State private var newWorktreeTrigger: NewWorktreeTrigger?
     @State private var importWorktreesRepoId: UUID?
@@ -75,6 +77,17 @@ struct ContentView: View {
             onConfirmRename: confirmRename
         ))
         .focusedValue(\.contentActions, focusedActions)
+        .onChange(of: selectedWorktreeId) { _, new in
+            sessionManager.visibleWorktreeId = new
+        }
+        .onChange(of: notificationStore.navigationTarget) { _, target in
+            guard let target else { return }
+            if store.worktree(id: target.worktreeId) != nil {
+                selectedWorktreeId = target.worktreeId
+                sessionManager.activate(sessionId: target.sessionId)
+            }
+            notificationStore.navigationTarget = nil
+        }
         .task(id: "update-startup-check") {
             if !TestMode.isE2E() {
                 await updateChecker.checkIfStale()
@@ -84,6 +97,7 @@ struct ContentView: View {
             if selectedWorktreeId == nil {
                 selectedWorktreeId = store.lastSelectedWorktreeId
             }
+            sessionManager.visibleWorktreeId = selectedWorktreeId
         }
         .onChange(of: selectedWorktreeId) { _, new in
             store.lastSelectedWorktreeId = new
@@ -121,6 +135,18 @@ struct ContentView: View {
             .help(caffeinate.isOn
                   ? "Sleep prevention ON — click to disable"
                   : "Prevent the display and system from sleeping while you work")
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Button { showNotifications.toggle() } label: {
+                Image(systemName: notificationStore.unreadCount > 0 ? "bell.badge.fill" : "bell")
+            }
+            .accessibilityIdentifier("toolbar.notifications")
+            .popover(isPresented: $showNotifications, arrowEdge: .bottom) {
+                NotificationListView()
+            }
+            .onChange(of: showNotifications) { _, shown in
+                if shown { notificationStore.markAllRead() }
+            }
         }
     }
 
