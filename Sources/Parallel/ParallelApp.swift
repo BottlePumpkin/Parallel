@@ -1,9 +1,20 @@
 import SwiftUI
 import AppKit
+import UserNotifications
 
 /// Strips AppKit's standard ⌘W window-close after the menu bar is built so ⌘W
 /// maps only to Worktree ▸ "Close Session" (issue #19).
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let notificationCenterDelegate = NotificationCenterDelegate()
+
+    /// Give the banner-click delegate the shared store and register it.
+    func wireNotifications(store: NotificationStore) {
+        notificationCenterDelegate.store = store
+        if Bundle.main.bundleIdentifier != nil {
+            UNUserNotificationCenter.current().delegate = notificationCenterDelegate
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // SwiftUI builds the menu bar during/after launch; defer a runloop tick
         // so the standard File ▸ Close item exists before we clear its ⌘W.
@@ -29,6 +40,7 @@ struct ParallelApp: App {
         }
     }
 
+    @State private var notificationStore = NotificationStore()
     @State private var store: WorkspaceStore = {
         let dir = TestMode.supportDirectory() ?? WorkspaceStore.defaultDirectory
         let s = WorkspaceStore(directory: dir)
@@ -51,6 +63,7 @@ struct ParallelApp: App {
                 .environment(caffeinate)
                 .environment(updateChecker)
                 .environment(updater)
+                .environment(notificationStore)
                 .onAppear {
                     if statusWatcher == nil {
                         let w = StatusWatcher(store: store)
@@ -58,8 +71,11 @@ struct ParallelApp: App {
                         w.start()
                     }
                     sessionManager.store = store
+                    sessionManager.notificationStore = notificationStore
+                    appDelegate.wireNotifications(store: notificationStore)
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                    sessionManager.beginTermination()
                     // Detach from store first so the terminate cascade doesn't
                     // wipe persisted tab specs we want to restore next launch.
                     sessionManager.store = nil
