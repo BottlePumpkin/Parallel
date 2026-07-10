@@ -1,6 +1,23 @@
 # Changelog
 
 All notable changes to Parallel are documented here.
+## [v0.5.0](https://github.com/BottlePumpkin/Parallel/compare/v0.4.2...v0.5.0) (2026-07-10)
+
+### Bug Fixes
+
+- **test:** Make the e2e bell affordance actually clickable (#12) ([`1d1b43a`](https://github.com/BottlePumpkin/Parallel/commit/1d1b43aa1f7727a34f719d72a9d75a4e65ea7561))
+- **services:** Insert userClosingSessions after the existence guard (#12) ([`5d169ba`](https://github.com/BottlePumpkin/Parallel/commit/5d169baf56ce4d80c68b51269e89f396ce2e5c03))
+- **views:** ⌘W closes only the active tab, not the app/worktree ([`b39dcd2`](https://github.com/BottlePumpkin/Parallel/commit/b39dcd287f9bcd15396b73113b3b7b127ddb7114))
+- **terminal:** Force SIGWINCH on worktree/tab switch to repaint TUIs (#24) ([`45dfd1b`](https://github.com/BottlePumpkin/Parallel/commit/45dfd1be5a90d8f3b1c30ba23d10f7e2abd58d55))
+
+### Features
+
+- **app:** Inject NotificationStore, banner-click delegate, quit suppression (#12) ([`09f4dc5`](https://github.com/BottlePumpkin/Parallel/commit/09f4dc5ba58c5aad9333049036354446c0f89106))
+- **views:** Toolbar bell + notification popover + navigation (#12) ([`0c3f6ca`](https://github.com/BottlePumpkin/Parallel/commit/0c3f6ca181834dc72cc4d2c5f5cde61e0d7196be))
+- **services:** Route bells + session-ended into NotificationStore (#12) ([`f8a3ddc`](https://github.com/BottlePumpkin/Parallel/commit/f8a3ddc4ca736f3707d40cf27cee2ebd53a63179))
+- **services:** Banner policy, needs-attention post, click delegate (#12) ([`ced8b8a`](https://github.com/BottlePumpkin/Parallel/commit/ced8b8a9b22b723657853daff9c3e978fdcdfbf1))
+- **services:** AppNotification model + NotificationStore (#12) ([`c2866c3`](https://github.com/BottlePumpkin/Parallel/commit/c2866c372480bd3138cde7f05079b689c4013c36))
+- **services:** Pure BellDebouncer for bell notifications (#12) ([`9d8a471`](https://github.com/BottlePumpkin/Parallel/commit/9d8a471944e3508f0245109ebb7fa59b617ed705))
 ## [v0.4.2](https://github.com/BottlePumpkin/Parallel/compare/v0.4.1...v0.4.2) (2026-07-05)
 
 ### Bug Fixes
