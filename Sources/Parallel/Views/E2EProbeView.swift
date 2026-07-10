@@ -8,6 +8,7 @@ import SwiftTerm
 /// `.value` is the current count / active worktree id / terminal-focus flag.
 struct E2EProbeView: View {
     @Environment(SessionManager.self) private var sessionManager
+    @Environment(NotificationStore.self) private var notificationStore
     let selectedWorktreeId: UUID?
 
     /// Polled view of whether a terminal currently holds keyboard focus. Lets a
@@ -42,6 +43,12 @@ struct E2EProbeView: View {
             Text("sel")
                 .accessibilityIdentifier("e2e.selectionActive")
                 .accessibilityValue(selectionActive ? "1" : "0")
+            Text("unread")
+                .accessibilityIdentifier("e2e.unreadNotificationCount")
+                .accessibilityValue("\(notificationStore.unreadCount)")
+            Button("emitBell") { sessionManager.e2eEmitBellInBackground() }
+                .accessibilityIdentifier("e2e.emitBackgroundBell")
+                .allowsHitTesting(true)
         }
         .frame(width: 1, height: 1)
         .opacity(0.01)
