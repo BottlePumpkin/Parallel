@@ -44,7 +44,8 @@ final class BellNotificationTests: XCTestCase {
         expectValue(unread, toEqual: "1", timeout: 15)
 
         // Opening the popover marks all read; tapping the row navigates to alpha.
-        app.buttons["toolbar.notifications"].click()
+        // `.firstMatch`: SwiftUI surfaces the toolbar button twice in the AX tree.
+        app.buttons["toolbar.notifications"].firstMatch.click()
         let row = app.buttons["notificationRow"].firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         expectValue(unread, toEqual: "0", timeout: 5)
