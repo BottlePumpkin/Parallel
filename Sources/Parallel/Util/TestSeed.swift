@@ -15,6 +15,10 @@ enum TestSeed {
             let path: String
             let branch: String
             let displayName: String
+            /// Optional shell commands run when the session first starts — lets an
+            /// e2e drive real terminal behaviour (e.g. ringing the bell). Defaulted
+            /// so existing seeds (and the memberwise init) stay source-compatible.
+            var setupCommands: [String]? = nil
         }
         let repos: [SeedRepo]
         let worktrees: [SeedWorktree]
@@ -47,7 +51,8 @@ enum TestSeed {
                 repoId: repoIds[w.repoIndex],
                 path: URL(fileURLWithPath: w.path),
                 branch: w.branch,
-                displayName: w.displayName
+                displayName: w.displayName,
+                setupCommands: w.setupCommands ?? []
             )
             store.addWorktree(wt)
         }

@@ -25,6 +25,31 @@ final class TestSeedTests: XCTestCase {
         XCTAssertEqual(store.worktrees.first?.repoId, store.repos.first?.id)
     }
 
+    func testSetupCommandsDecodeAndApply() throws {
+        // The bell e2e (issue #12) drives a real terminal bell through a seeded
+        // setup command, so the seed must carry setupCommands onto the Worktree.
+        let json = """
+        {"repos":[{"root":"/tmp/demo","displayName":"demo"}],
+         "worktrees":[{"repoIndex":0,"path":"/tmp/demo/wt","branch":"alpha","displayName":"alpha","setupCommands":["printf '\\\\a'"]}]}
+        """
+        let spec = try JSONDecoder().decode(TestSeed.Spec.self, from: Data(json.utf8))
+        XCTAssertEqual(spec.worktrees.first?.setupCommands, ["printf '\\a'"])
+
+        let store = try tempStore()
+        TestSeed.apply(spec, to: store)
+        XCTAssertEqual(store.worktrees.first?.setupCommands, ["printf '\\a'"])
+    }
+
+    func testMissingSetupCommandsDefaultsToEmpty() throws {
+        let store = try tempStore()
+        let spec = TestSeed.Spec(
+            repos: [.init(root: "/tmp/demo", displayName: "demo")],
+            worktrees: [.init(repoIndex: 0, path: "/tmp/demo/wt", branch: "main", displayName: "x")]
+        )
+        TestSeed.apply(spec, to: store)
+        XCTAssertEqual(store.worktrees.first?.setupCommands, [])
+    }
+
     func testOutOfBoundsRepoIndexIsSkipped() throws {
         let store = try tempStore()
         let spec = TestSeed.Spec(

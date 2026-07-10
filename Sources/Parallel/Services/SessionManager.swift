@@ -428,17 +428,6 @@ final class SessionManager {
         }
     }
 
-    /// E2E-only: feed a raw BEL to every running session that is NOT visible, so a
-    /// UI test can exercise the real bell → delegate → store path deterministically.
-    func e2eEmitBellInBackground() {
-        dispatchPrecondition(condition: .onQueue(.main))
-        guard TestMode.isE2E() else { return }
-        let visibleSid = visibleWorktreeId.flatMap { activeSession(for: $0)?.session.id }
-        for entry in allRunningSessions where entry.session.id != visibleSid {
-            entry.terminalView.feed(byteArray: ArraySlice([0x07]))
-        }
-    }
-
     /// Restart the active session in a worktree (used by the "Restart Session"
     /// placeholder button after a shell exits).
     func restartSession(for worktree: Worktree, setupCommands: [String]) {

@@ -2,8 +2,9 @@ import XCTest
 
 /// Issue #12: a real terminal bell in a BACKGROUND session raises an unread
 /// in-app notification; opening the popover marks it read; tapping the row
-/// navigates to that worktree. Drives the full bell → delegate → store → UI path
-/// (the BEL is fed to a non-visible SwiftTerm view via an e2e affordance).
+/// navigates to that worktree. The bell is produced by the *real* PTY path — the
+/// seeded "alpha" worktree runs `printf '\a'` a few seconds after its shell
+/// starts, by which point we've switched to "beta", so alpha is backgrounded.
 final class BellNotificationTests: XCTestCase {
     func testBackgroundBellRaisesNotificationAndNavigates() throws {
         let fx = try E2EFixture.make()
@@ -11,10 +12,12 @@ final class BellNotificationTests: XCTestCase {
         let repo = try fx.makeRepo(named: "demo")
         let alpha = try fx.addWorktree(repo: repo, branch: "alpha", dirName: "alpha")
         let beta  = try fx.addWorktree(repo: repo, branch: "beta",  dirName: "beta")
+        // `\\\\a` in this Swift literal → `\\a` in the seed JSON → `\a` after JSON
+        // decode → the shell runs `printf '\a'`, emitting a BEL (0x07).
         try fx.writeSeed("""
         {"repos":[{"root":"\(repo.path)","displayName":"demo"}],
          "worktrees":[
-           {"repoIndex":0,"path":"\(alpha.path)","branch":"alpha","displayName":"alpha"},
+           {"repoIndex":0,"path":"\(alpha.path)","branch":"alpha","displayName":"alpha","setupCommands":["sleep 3; printf '\\\\a'"]},
            {"repoIndex":0,"path":"\(beta.path)","branch":"beta","displayName":"beta"}
          ]}
         """)
@@ -29,24 +32,24 @@ final class BellNotificationTests: XCTestCase {
         let unread = app.staticTexts["e2e.unreadNotificationCount"]
         XCTAssertTrue(unread.waitForExistence(timeout: 5))
 
-        // Start alpha, then beta — alpha ends up backgrounded, beta visible.
+        // Start alpha (its bell is now scheduled), then switch to beta so alpha
+        // is backgrounded before the bell fires.
         alphaRow.click()
         expectValue(count, toEqual: "1", timeout: 15)
         let alphaId = awt.value as? String
         app.staticTexts["beta"].click()
         expectValue(count, toEqual: "2", timeout: 15)
 
-        // Feed a real BEL to the backgrounded alpha session.
-        app.buttons["e2e.emitBackgroundBell"].click()
-        expectValue(unread, toEqual: "1", timeout: 10)
+        // alpha's delayed bell fires while backgrounded → one unread notification.
+        expectValue(unread, toEqual: "1", timeout: 15)
 
-        // Open the popover (marks read) and tap the row to navigate back to alpha.
+        // Opening the popover marks all read; tapping the row navigates to alpha.
         app.buttons["toolbar.notifications"].click()
         let row = app.buttons["notificationRow"].firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 5))
-        expectValue(unread, toEqual: "0", timeout: 5)   // mark-all-read on open
+        expectValue(unread, toEqual: "0", timeout: 5)
         row.click()
-        expectValue(awt, toEqual: alphaId ?? "", timeout: 10)   // navigated to alpha
+        expectValue(awt, toEqual: alphaId ?? "", timeout: 10)
 
         app.terminate()
     }
